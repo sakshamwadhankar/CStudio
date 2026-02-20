@@ -89,9 +89,20 @@ export const useAppSaveAllResource = () => {
           dispatch(uiActions.setStatus(isV3Mode ? 'Capturing edited DOM (V3.0)...' : 'Snapshotting live DOM...'));
           try {
             const capturedDOM = await new Promise((resolveDOM) => {
-              // Capture outerHTML to get the full document including edits
+              // Force all relative paths to absolute URLs before capturing
+              // This ensures the path replacement logic can match resources correctly
+              const captureScript = `
+                // Force all relative paths to absolute paths
+                document.querySelectorAll('link[href], script[src], img[src], source[src], a[href]').forEach(el => {
+                  if (el.hasAttribute('href')) el.href = el.href;
+                  if (el.hasAttribute('src')) el.src = el.src;
+                });
+                // Now return the DOM
+                document.documentElement.outerHTML;
+              `;
+              
               chrome.devtools.inspectedWindow.eval(
-                'document.documentElement.outerHTML',
+                captureScript,
                 (result, isException) => {
                   if (isException) {
                     console.log('[DEVTOOL] DOM Snapshot failed:', isException);
