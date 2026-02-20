@@ -1,0 +1,23 @@
+# Modules
+node_modules
+bower_components
+test/bower_components
+
+# Misc
+.tmp
+.DS_Store
+*.log
+
+# Distribution
+dist
+output
+
+# Parcel
+.cache
+.parcel-cache
+
+# IDE
+.idea
+
+# Distribution
+unpacked2x/*.zip

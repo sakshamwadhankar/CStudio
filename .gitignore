@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+coverage
+.DS_Store
+Thumbs.db
+.env
+.parcel-cache
+npm-debug.log
+yarn-error.log
+*.log
