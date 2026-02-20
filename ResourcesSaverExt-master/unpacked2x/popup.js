@@ -52,9 +52,15 @@ window.onload = () => {
         throw new Error("No active tab found");
       }
 
-      if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+      // Safe URL check
+      const currentUrl = tab.url || "";
+      if (currentUrl.startsWith('chrome://') ||
+        currentUrl.startsWith('chrome-extension://') ||
+        currentUrl.startsWith('edge://') ||
+        currentUrl.startsWith('about:') ||
+        currentUrl.startsWith('view-source:')) {
         alert("VisBug cannot be injected into this page. Please try on a normal website.");
-        throw new Error("Restricted URL: " + tab.url);
+        throw new Error("Restricted URL: " + currentUrl);
       }
 
       // 1. Inject VisBug JS (ES Module)
@@ -87,6 +93,12 @@ window.onload = () => {
       btn.style.backgroundColor = '#2196F3'; // Blue to indicate active
     } catch (err) {
       console.error('Injection failed:', err);
+      // If it's a specific known error, we could alert it
+      if (err.message && err.message.includes('Restricted URL')) {
+        // Already alerted inside try
+      } else {
+        alert('Injection failed: ' + err.message);
+      }
       btn.innerText = 'Error (See Console)';
       btn.style.backgroundColor = '#f44336';
     }
