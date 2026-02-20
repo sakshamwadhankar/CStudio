@@ -70,10 +70,10 @@ export const useAppSaveAllResource = () => {
         ]);
 
         // ──────────────────────────────────────────────
-        // Phase 3: DOM Snapshot Engine + V3.0 React Killer
+        // Phase 3: DOM Snapshot Engine + V3.0 Anti-Hydration Shield
         // ──────────────────────────────────────────────
         // Capture the "Live" HTML for the main page to fix empty React/Next.js shells.
-        // In V3.0 mode, also strip all <script> tags to prevent React from overwriting edits.
+        // In V3.0 mode, inject DOM API hijacking script to block React hydration while keeping animations.
 
         const version = localStorage.getItem('resources-saver-version');
         const isV3Mode = version === '3';
@@ -117,10 +117,48 @@ export const useAppSaveAllResource = () => {
             if (capturedDOM) {
               let finalHTML = capturedDOM;
 
-              // V3.0 React Killer: Strip all <script> tags
+              // V3.0 Anti-Hydration Shield: Inject DOM API hijacking script
               if (isV3Mode) {
-                console.log('[DEVTOOL] V3.0 Mode: Applying React Killer (stripping scripts)');
-                finalHTML = capturedDOM.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, '');
+                console.log('[DEVTOOL] V3.0 Mode: Injecting Anti-Hydration Shield (DOM API Hijacking)');
+                
+                // 🏴‍☠️ CStudio Anti-Hydration Shield 🏴‍☠️
+                // Hijack native DOM text setters to block React from overwriting VisBug edits
+                const hackerShield = `<script>
+// 🏴‍☠️ CStudio Anti-Hydration Shield 🏴‍☠️
+// Hijack native DOM text setters to block React from overwriting VisBug edits
+(function() {
+  console.log('[CStudio Shield] Activating Anti-Hydration Protection...');
+  
+  const _tx = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+  Object.defineProperty(Node.prototype, 'textContent', { 
+    set: function(v) { 
+      console.log('[CStudio Shield] Blocked textContent update'); 
+    }, 
+    get: _tx.get 
+  });
+  
+  const _nv = Object.getOwnPropertyDescriptor(CharacterData.prototype, 'nodeValue');
+  Object.defineProperty(CharacterData.prototype, 'nodeValue', { 
+    set: function(v) { 
+      console.log('[CStudio Shield] Blocked nodeValue update'); 
+    }, 
+    get: _nv.get 
+  });
+  
+  const _ih = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { 
+    set: function(v) { 
+      console.log('[CStudio Shield] Blocked innerHTML update'); 
+    }, 
+    get: _ih.get 
+  });
+  
+  console.log('[CStudio Shield] Protection Active - React hydration blocked!');
+})();
+</script>`;
+                
+                // Inject shield immediately after <head> tag
+                finalHTML = capturedDOM.replace(/<head>/i, '<head>' + hackerShield);
               }
 
               // Ensure DOCTYPE is present
