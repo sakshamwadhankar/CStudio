@@ -16,9 +16,29 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["tabs", "downloads", "downloads.shelf"],
-  "host_permissions": ["http://*/", "https://*/"],
-  "optional_host_permissions": ["*://*/*"],
+  "permissions": [
+    "tabs",
+    "downloads",
+    "downloads.shelf",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/",
+    "https://*/"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
   "devtools_page": "devtool.html",
-  "manifest_version": 3
+  "manifest_version": 3,
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "visbug_assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

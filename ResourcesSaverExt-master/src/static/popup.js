@@ -40,13 +40,58 @@ window.onload = () => {
     handleSwitchVersion('3');
   });
 
-  document.getElementById('visbug-toggle-btn').addEventListener('click', () => {
-    console.log('VisBug Activated!');
+  document.getElementById('visbug-toggle-btn').addEventListener('click', async () => {
     // Visual feedback
     const btn = document.getElementById('visbug-toggle-btn');
-    const originalText = btn.innerText;
-    btn.innerText = 'Activated!';
-    setTimeout(() => { btn.innerText = originalText; }, 1000);
+    btn.innerText = 'Injecting...';
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab) {
+        throw new Error("No active tab found");
+      }
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          // 1. Inject CSS
+          if (!document.querySelector('link[href*="visbug.css"]')) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = chrome.runtime.getURL('visbug_assets/visbug.css');
+            document.head.appendChild(link);
+          }
+
+          // 2. Inject VisBug JS (ES Module)
+          if (!document.querySelector('script[src*="visbug.js"]')) {
+            const script = document.createElement('script');
+            script.type = 'module';
+            script.src = chrome.runtime.getURL('visbug_assets/visbug.js');
+            document.body.appendChild(script);
+          }
+
+          // 3. Activate Component
+          // We wait slightly for module to load or just append the element (VisBug upgrades automatically)
+          if (!document.querySelector('vis-bug')) {
+            const visbug = document.createElement('vis-bug');
+            document.body.prepend(visbug);
+            console.log('CStudio: VisBug Element Injected');
+          }
+        }
+      });
+
+      btn.innerText = 'Activated!';
+      btn.style.backgroundColor = '#2196F3'; // Blue to indicate active
+    } catch (err) {
+      console.error('Injection failed:', err);
+      btn.innerText = 'Error (See Console)';
+      btn.style.backgroundColor = '#f44336';
+    }
+
+    setTimeout(() => {
+      if (btn.innerText === 'Activated!') btn.innerText = 'Enable Live Editor (VisBug)';
+    }, 2000);
   });
 
   const version = localStorage.getItem('resources-saver-version');
