@@ -1,9 +1,9 @@
 {
   "name": "CStudio - Edit & Clone",
   "version": "2.0.6",
-  "description": "Visually edit any website and download the source code locally.",
-  "author": "up209d",
-  "homepage_url": "https://github.com/up209d/ResourcesSaverExt",
+  "description": "Visually edit any website and download the source code locally - CStudio.",
+  "author": "CStudio Team",
+  "homepage_url": "https://github.com/sakshamwadhankar/CStudio",
   "icons": {
     "128": "icon.png"
   },

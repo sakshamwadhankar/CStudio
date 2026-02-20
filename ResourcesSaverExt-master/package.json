@@ -1,12 +1,12 @@
 {
-  "name": "resources-saver-extension",
-  "version": "2.0.6",
-  "description": "Chrome extension for one click downloading all resources!",
+  "name": "cstudio-edit-clone",
+  "version": "3.0.0",
+  "description": "CStudio - Edit & Clone: Visually edit any website and download the source code locally.",
   "browserslist": [
     "> 0.5%, last 2 versions, not dead"
   ],
-  "repository": "git@github.com:up209d/ResourcesSaverExt.git",
-  "author": "up209d <up209d@gmail.com>",
+  "repository": "git@github.com:sakshamwadhankar/CStudio.git",
+  "author": "sakshamwadhankar",
   "license": "GPL-3.0+",
   "scripts": {
     "dev": "yarn cp && parcel watch ./src/*.html --no-hmr --dist-dir unpacked2x",
