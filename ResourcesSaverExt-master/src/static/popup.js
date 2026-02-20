@@ -52,6 +52,11 @@ window.onload = () => {
         throw new Error("No active tab found");
       }
 
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+        alert("VisBug cannot be injected into this page. Please try on a normal website.");
+        throw new Error("Restricted URL: " + tab.url);
+      }
+
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
