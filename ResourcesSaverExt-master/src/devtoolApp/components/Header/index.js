@@ -25,7 +25,7 @@ export const Header = (props) => {
   return (
     <HeaderWrapper>
       <div>
-        <span>Resources Saver</span>
+        <span>CStudio</span>
         <sup>Version: {packageJson?.version || 'LOCAL'}</sup>
         <ResetButton color={props.theme.white} bgColor={props.theme.danger} />
       </div>

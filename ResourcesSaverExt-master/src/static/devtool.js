@@ -3,7 +3,7 @@
 const init = () => {
   try {
     const version = localStorage.getItem('resources-saver-version');
-    if (version === '2') {
+    if (version === '2' || version === '3') {
       return chrome.devtools.panels.create('CStudio', 'icon.gif', 'devtool.app.html', function (panel) {
         console.log('Content is loaded to panel', panel);
       });
