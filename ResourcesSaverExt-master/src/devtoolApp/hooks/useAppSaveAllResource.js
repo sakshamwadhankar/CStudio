@@ -70,9 +70,13 @@ export const useAppSaveAllResource = () => {
         ]);
 
         // ──────────────────────────────────────────────
-        // Phase 3: DOM Snapshot Engine
+        // Phase 3: DOM Snapshot Engine + V3.0 React Killer
         // ──────────────────────────────────────────────
         // Capture the "Live" HTML for the main page to fix empty React/Next.js shells.
+        // In V3.0 mode, also strip all <script> tags to prevent React from overwriting edits.
+
+        const version = localStorage.getItem('resources-saver-version');
+        const isV3Mode = version === '3';
 
         // Find the resource that matches the current page URL
         const mainPageUrl = downloadItem.url;
@@ -82,12 +86,12 @@ export const useAppSaveAllResource = () => {
         );
 
         if (mainResource) {
-          dispatch(uiActions.setStatus('Snapshotting live DOM...'));
+          dispatch(uiActions.setStatus(isV3Mode ? 'Capturing edited DOM (V3.0)...' : 'Snapshotting live DOM...'));
           try {
             const capturedDOM = await new Promise((resolveDOM) => {
-              // serializeToString(document) captures the full DOM including Doctype
+              // Capture outerHTML to get the full document including edits
               chrome.devtools.inspectedWindow.eval(
-                'new XMLSerializer().serializeToString(document)',
+                'document.documentElement.outerHTML',
                 (result, isException) => {
                   if (isException) {
                     console.log('[DEVTOOL] DOM Snapshot failed:', isException);
@@ -100,9 +104,22 @@ export const useAppSaveAllResource = () => {
             });
 
             if (capturedDOM) {
+              let finalHTML = capturedDOM;
+
+              // V3.0 React Killer: Strip all <script> tags
+              if (isV3Mode) {
+                console.log('[DEVTOOL] V3.0 Mode: Applying React Killer (stripping scripts)');
+                finalHTML = capturedDOM.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, '');
+              }
+
+              // Ensure DOCTYPE is present
+              if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
+                finalHTML = '<!DOCTYPE html>\n' + finalHTML;
+              }
+
               console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
               // This overrides the empty "Network Shell" with the actual rendered HTML
-              mainResource.content = capturedDOM;
+              mainResource.content = finalHTML;
             }
           } catch (err) {
             console.log('[DEVTOOL] Error during DOM snapshot:', err);
