@@ -92,12 +92,26 @@ export const useAppSaveAllResource = () => {
               // Force all relative paths to absolute URLs before capturing
               // This ensures the path replacement logic can match resources correctly
               const captureScript = `
-                // Force all relative paths to absolute paths
+                // 1. Force all relative paths to absolute paths
                 document.querySelectorAll('link[href], script[src], img[src], source[src], a[href]').forEach(el => {
                   if (el.hasAttribute('href')) el.href = el.href;
                   if (el.hasAttribute('src')) el.src = el.src;
                 });
-                // Now return the DOM
+                
+                // 2. The Script Resurrector: Find modulepreloads and inject actual execution scripts
+                document.querySelectorAll('link[rel="modulepreload"][href]').forEach(link => {
+                  const src = link.href;
+                  // Check if the script isn't already in the DOM
+                  if (!document.querySelector('script[src="' + src + '"]')) {
+                    const script = document.createElement('script');
+                    script.type = 'module';
+                    script.src = src;
+                    script.crossOrigin = '';
+                    document.body.appendChild(script);
+                  }
+                });
+                
+                // 3. Return the fully reconstructed DOM
                 document.documentElement.outerHTML;
               `;
               
