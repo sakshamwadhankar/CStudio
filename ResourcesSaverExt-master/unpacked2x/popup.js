@@ -57,27 +57,24 @@ window.onload = () => {
         throw new Error("Restricted URL: " + tab.url);
       }
 
+      // 1. Inject VisBug JS (ES Module)
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: () => {
-          // 1. Inject CSS
-          if (!document.querySelector('link[href*="visbug.css"]')) {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = chrome.runtime.getURL('visbug_assets/visbug.css');
-            document.head.appendChild(link);
-          }
-
-          // 2. Inject VisBug JS (ES Module)
+        func: (assetsUrl) => {
           if (!document.querySelector('script[src*="visbug.js"]')) {
             const script = document.createElement('script');
             script.type = 'module';
-            script.src = chrome.runtime.getURL('visbug_assets/visbug.js');
+            script.src = assetsUrl;
             document.body.appendChild(script);
           }
+        },
+        args: [chrome.runtime.getURL('visbug_assets/visbug.js')]
+      });
 
-          // 3. Activate Component
-          // We wait slightly for module to load or just append the element (VisBug upgrades automatically)
+      // 2. Activate Component
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
           if (!document.querySelector('vis-bug')) {
             const visbug = document.createElement('vis-bug');
             document.body.prepend(visbug);
