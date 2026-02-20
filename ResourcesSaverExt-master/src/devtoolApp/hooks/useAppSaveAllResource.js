@@ -70,10 +70,10 @@ export const useAppSaveAllResource = () => {
         ]);
 
         // ──────────────────────────────────────────────
-        // Phase 3: DOM Snapshot Engine + V3.0 Anti-Hydration Shield
+        // Phase 3: DOM Snapshot Engine + V3.0 Hydration Nuke
         // ──────────────────────────────────────────────
         // Capture the "Live" HTML for the main page to fix empty React/Next.js shells.
-        // In V3.0 mode, inject DOM API hijacking script to block React hydration while keeping animations.
+        // In V3.0 mode, rename React root to break hydration while keeping GSAP animations.
 
         const version = localStorage.getItem('resources-saver-version');
         const isV3Mode = version === '3';
@@ -89,29 +89,42 @@ export const useAppSaveAllResource = () => {
           dispatch(uiActions.setStatus(isV3Mode ? 'Capturing edited DOM (V3.0)...' : 'Snapshotting live DOM...'));
           try {
             const capturedDOM = await new Promise((resolveDOM) => {
-              // Force all relative paths to absolute URLs before capturing
-              // This ensures the path replacement logic can match resources correctly
+              // The V3.0 Hydration Nuke Strategy:
+              // 1. Force absolute URLs for proper resource mapping
+              // 2. Rename React root to break hydration targeting
+              // 3. Resurrect all preload scripts for GSAP execution
               const captureScript = `
-                // 1. Force all relative paths to absolute paths
+                // 1. Force Absolute URLs
                 document.querySelectorAll('link[href], script[src], img[src], source[src], a[href]').forEach(el => {
                   if (el.hasAttribute('href')) el.href = el.href;
                   if (el.hasAttribute('src')) el.src = el.src;
                 });
                 
-                // 2. The Script Resurrector: Find modulepreloads and inject actual execution scripts
-                document.querySelectorAll('link[rel="modulepreload"][href]').forEach(link => {
+                // 2. The Hydration Nuke (Kill React's mapping, keep GSAP)
+                // React relies on 'data-reactroot' or specific ID structures (like '<div id="root">') to hydrate.
+                // By renaming the root ID and stripping React-specific attributes, React throws a hydration mismatch and aborts,
+                // BUT the JS execution thread continues, allowing standalone GSAP to run!
+                
+                const rootDiv = document.getElementById('root') || document.querySelector('[data-reactroot]') || document.querySelector('#app');
+                if (rootDiv) {
+                  rootDiv.id = 'cstudio-isolated-root';
+                  rootDiv.removeAttribute('data-reactroot');
+                }
+                
+                // Strip all React specific internal props from the DOM string later if needed
+                
+                // 3. Resurrect ALL preloads as actual scripts (Fixed to include everything)
+                document.querySelectorAll('link[rel="modulepreload"][href], link[rel="preload"][as="script"][href]').forEach(link => {
                   const src = link.href;
-                  // Check if the script isn't already in the DOM
                   if (!document.querySelector('script[src="' + src + '"]')) {
                     const script = document.createElement('script');
-                    script.type = 'module';
+                    script.type = 'module'; // Keep module so imports work
                     script.src = src;
                     script.crossOrigin = '';
                     document.body.appendChild(script);
                   }
                 });
                 
-                // 3. Return the fully reconstructed DOM
                 document.documentElement.outerHTML;
               `;
               
@@ -131,56 +144,15 @@ export const useAppSaveAllResource = () => {
             if (capturedDOM) {
               let finalHTML = capturedDOM;
 
-              // V3.0 Anti-Hydration Shield: Inject DOM API hijacking script
-              if (isV3Mode) {
-                console.log('[DEVTOOL] V3.0 Mode: Injecting Anti-Hydration Shield (DOM API Hijacking)');
-                
-                // 🏴‍☠️ CStudio Anti-Hydration Shield 🏴‍☠️
-                // Hijack native DOM text setters to block React from overwriting VisBug edits
-                const hackerShield = `<script>
-// 🏴‍☠️ CStudio Anti-Hydration Shield 🏴‍☠️
-// Hijack native DOM text setters to block React from overwriting VisBug edits
-(function() {
-  console.log('[CStudio Shield] Activating Anti-Hydration Protection...');
-  
-  const _tx = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
-  Object.defineProperty(Node.prototype, 'textContent', { 
-    set: function(v) { 
-      console.log('[CStudio Shield] Blocked textContent update'); 
-    }, 
-    get: _tx.get 
-  });
-  
-  const _nv = Object.getOwnPropertyDescriptor(CharacterData.prototype, 'nodeValue');
-  Object.defineProperty(CharacterData.prototype, 'nodeValue', { 
-    set: function(v) { 
-      console.log('[CStudio Shield] Blocked nodeValue update'); 
-    }, 
-    get: _nv.get 
-  });
-  
-  const _ih = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-  Object.defineProperty(Element.prototype, 'innerHTML', { 
-    set: function(v) { 
-      console.log('[CStudio Shield] Blocked innerHTML update'); 
-    }, 
-    get: _ih.get 
-  });
-  
-  console.log('[CStudio Shield] Protection Active - React hydration blocked!');
-})();
-</script>`;
-                
-                // Inject shield immediately after <head> tag
-                finalHTML = capturedDOM.replace(/<head>/i, '<head>' + hackerShield);
-              }
-
               // Ensure DOCTYPE is present
               if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
                 finalHTML = '<!DOCTYPE html>\n' + finalHTML;
               }
 
               console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
+              if (isV3Mode) {
+                console.log('[DEVTOOL] V3.0 Mode: Hydration Nuke applied - React will fail gracefully, GSAP will run');
+              }
               // This overrides the empty "Network Shell" with the actual rendered HTML
               mainResource.content = finalHTML;
             }
