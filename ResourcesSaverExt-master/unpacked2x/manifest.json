@@ -1,24 +1,44 @@
 {
-  "name": "Save All Resources",
+  "name": "CStudio - Edit & Clone",
   "version": "2.0.6",
-  "description": "Save all resources files with retaining folder structure.",
-  "author": "up209d",
-  "homepage_url": "https://github.com/up209d/ResourcesSaverExt",
+  "description": "Visually edit any website and download the source code locally - CStudio.",
+  "author": "CStudio Team",
+  "homepage_url": "https://github.com/sakshamwadhankar/CStudio",
   "icons": {
     "128": "icon.png"
   },
   "action": {
     "default_icon": "icon.png",
-    "default_title": "Save All Resources",
+    "default_title": "CStudio - Edit & Clone",
     "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["tabs", "downloads", "downloads.shelf"],
-  "host_permissions": ["http://*/", "https://*/"],
-  "optional_host_permissions": ["*://*/*"],
+  "permissions": [
+    "tabs",
+    "downloads",
+    "downloads.shelf",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/",
+    "https://*/"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
   "devtools_page": "devtool.html",
-  "manifest_version": 3
+  "manifest_version": 3,
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "visbug_assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }
