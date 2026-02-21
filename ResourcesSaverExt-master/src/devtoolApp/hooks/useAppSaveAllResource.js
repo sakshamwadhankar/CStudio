@@ -98,37 +98,77 @@ export const useAppSaveAllResource = () => {
                 const liveBase = window.location.origin;
 
                 // ═══════════════════════════════════════════════════════════════
-                // GOD-MODE DOM CLEANSER 🧹🔥
-                // Removes VisBug UI, CSP blocks, and stuck preloaders
+                // SMART CLONE STRATEGY 🧠
+                // Protects live page while using getComputedStyle() correctly
                 // ═══════════════════════════════════════════════════════════════
 
-                // A. KILL CSP & META REFRESH (Allows our CDN scripts to run)
-                document.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
-
-                // B. KILL VISBUG UI & EXTENSION LEFTOVERS (Fixes 'invalid/' error & invisible shields)
-                document.querySelectorAll('vis-bug, #visbug').forEach(el => el.remove());
-                document.querySelectorAll('[src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
-
-                // C. AGGRESSIVE PRELOADER NUKE (Kills full-screen loading overlays)
+                // STEP 1: TAG THE LIVE DOM (getComputedStyle works here!)
+                // Tag preloaders that need to be hidden
                 document.querySelectorAll('div, section').forEach(el => {
                   const style = window.getComputedStyle(el);
                   if (style.position === 'fixed' && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0')) {
                     if (parseInt(style.zIndex) > 50) {
-                       el.style.setProperty('display', 'none', 'important');
-                       el.style.setProperty('opacity', '0', 'important');
-                       el.style.setProperty('pointer-events', 'none', 'important');
+                      el.setAttribute('data-cstudio-preloader', 'true');
                     }
                   }
                 });
 
-                // ═══════════════════════════════════════════════════════════════
+                // Tag old-style preloaders (z-index > 1000, bottom = 0)
+                document.querySelectorAll('div').forEach(div => {
+                  const style = window.getComputedStyle(div);
+                  if (style.position === 'fixed' && parseInt(style.zIndex) > 1000 && parseInt(style.bottom) === 0) {
+                    div.setAttribute('data-cstudio-preloader', 'true');
+                  }
+                });
 
-                // 1. STORE ORIGINAL URLS & AGGRESSIVE ABSOLUTIZATION (Fixes 404s)
-                document.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
+                // Tag hidden elements for pre-reveal
+                const preRevealElements = document.querySelectorAll(
+                  '.opacity-0:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
+                  '[style*="opacity: 0"]:not([role="dialog"]):not([role="menu"]), ' +
+                  '[style*="visibility: hidden"]:not([role="dialog"]):not([role="menu"]), ' +
+                  'video'
+                );
+                
+                preRevealElements.forEach(el => {
+                  if (el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) return;
+                  const computed = window.getComputedStyle(el);
+                  if (computed.display === 'none') return;
+                  el.setAttribute('data-cstudio-hidden', 'true');
+                });
+
+                // STEP 2: CLONE THE DOM
+                const clone = document.documentElement.cloneNode(true);
+
+                // STEP 3: CLEAN THE LIVE DOM (remove temporary tags)
+                document.querySelectorAll('[data-cstudio-preloader]').forEach(el => {
+                  el.removeAttribute('data-cstudio-preloader');
+                });
+                document.querySelectorAll('[data-cstudio-hidden]').forEach(el => {
+                  el.removeAttribute('data-cstudio-hidden');
+                });
+
+                // STEP 4: MODIFY THE CLONE (all operations on clone only!)
+                
+                // A. KILL CSP & META REFRESH (Allows our CDN scripts to run)
+                clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
+
+                // B. KILL VISBUG UI & EXTENSION LEFTOVERS (Fixes 'invalid/' error & invisible shields)
+                clone.querySelectorAll('vis-bug, #visbug').forEach(el => el.remove());
+                clone.querySelectorAll('[src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
+
+                // C. AGGRESSIVE PRELOADER NUKE (using tags from Step 1)
+                clone.querySelectorAll('[data-cstudio-preloader]').forEach(el => {
+                  el.style.setProperty('display', 'none', 'important');
+                  el.style.setProperty('opacity', '0', 'important');
+                  el.style.setProperty('pointer-events', 'none', 'important');
+                  el.removeAttribute('data-cstudio-preloader');
+                });
+
+                // D. STORE ORIGINAL URLS & AGGRESSIVE ABSOLUTIZATION (Fixes 404s)
+                clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                   ['src', 'data-src', 'poster'].forEach(attr => {
                     if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
                       const originalUrl = el.getAttribute(attr);
-                      // Save backup for self-healing
                       el.setAttribute('data-original-src', new URL(originalUrl, liveBase).href);
                       try { el.setAttribute(attr, new URL(originalUrl, liveBase).href); } catch(e){}
                     }
@@ -149,114 +189,107 @@ export const useAppSaveAllResource = () => {
                   });
                 });
 
-                document.querySelectorAll('link[href], a[href]').forEach(el => {
+                clone.querySelectorAll('link[href], a[href]').forEach(el => {
                   if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
                     try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
                   }
                 });
 
-                // 2. PRE-REVEAL & SCROLL UNLOCK (Instantly visible)
-                const preRevealElements = document.querySelectorAll(
-                  '.opacity-0:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
-                  '[style*="opacity: 0"]:not([role="dialog"]):not([role="menu"]), ' +
-                  '[style*="visibility: hidden"]:not([role="dialog"]):not([role="menu"]), ' +
-                  'video'
-                );
-                
-                preRevealElements.forEach(el => {
-                  if (el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) return;
-                  const computed = window.getComputedStyle(el);
-                  if (computed.display === 'none') return;
-                  
+                // E. PRE-REVEAL & SCROLL UNLOCK (using tags from Step 1)
+                clone.querySelectorAll('[data-cstudio-hidden]').forEach(el => {
                   el.classList.remove('opacity-0');
                   el.style.setProperty('opacity', '1', 'important');
                   el.style.setProperty('visibility', 'visible', 'important');
                   el.style.setProperty('transform', 'none', 'important');
                   el.classList.add('cstudio-animate-me');
+                  el.removeAttribute('data-cstudio-hidden');
                 });
 
-                document.documentElement.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-                document.body.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-                document.documentElement.style.setProperty('overflow', 'auto', 'important');
-                document.body.style.setProperty('overflow', 'auto', 'important');
+                const cloneHtml = clone.querySelector('html');
+                const cloneBody = clone.querySelector('body');
+                if (cloneHtml) {
+                  cloneHtml.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                  cloneHtml.style.setProperty('overflow', 'auto', 'important');
+                }
+                if (cloneBody) {
+                  cloneBody.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                  cloneBody.style.setProperty('overflow', 'auto', 'important');
+                }
 
-                document.querySelectorAll('div').forEach(div => {
-                  const style = window.getComputedStyle(div);
-                  if (style.position === 'fixed' && parseInt(style.zIndex) > 1000 && parseInt(style.bottom) === 0) {
-                    div.style.setProperty('display', 'none', 'important');
-                  }
-                });
-
-                // 3. THE ABSOLUTE NUKE (Kill native scripts)
-                document.querySelectorAll('script').forEach(script => {
+                // F. THE ABSOLUTE NUKE (Kill native scripts on clone)
+                clone.querySelectorAll('script').forEach(script => {
                   if (script.src && script.src.includes('visbug')) return;
                   script.remove();
                 });
-                document.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
+                clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
 
-                // 4. THE SELF-HEALING & SAFE PHANTOM ENGINE
-                const engineScript = document.createElement('script');
-                engineScript.innerHTML = \`
-                  // A. Image Self-Healing Fallback
-                  window.addEventListener('error', function(e) {
-                    if (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE') {
-                      const backupSrc = e.target.getAttribute('data-original-src');
-                      if (backupSrc && e.target.src !== backupSrc) {
-                        console.log('[CStudio] Auto-healing broken image:', backupSrc);
-                        e.target.src = backupSrc;
-                      }
-                    }
-                  }, true);
-
-                  // B. Load GSAP
-                  const s1 = document.createElement('script');
-                  s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-                  document.body.appendChild(s1);
-                  
-                  const s2 = document.createElement('script');
-                  s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
-                  document.body.appendChild(s2);
-                  
-                  let chk = 0;
-                  const intGSAP = setInterval(() => {
-                    chk++;
-                    if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
-                      clearInterval(intGSAP);
-                      gsap.registerPlugin(ScrollTrigger);
-                      
-                      document.documentElement.style.setProperty('overflow', 'auto', 'important');
-                      document.body.style.setProperty('overflow', 'auto', 'important');
-
-                      const viewportThreshold = window.innerHeight * 0.3;
-
-                      document.querySelectorAll('.cstudio-animate-me').forEach(el => {
-                        // CRITICAL FIX: Only animate elements BELOW the initial viewport
-                        const rect = el.getBoundingClientRect();
-                        if (rect.top > viewportThreshold) {
-                          gsap.fromTo(el, 
-                            { opacity: 0, y: 50 },
-                            { 
-                              opacity: 1, 
-                              y: 0, 
-                              duration: 1,
-                              ease: 'power2.out',
-                              scrollTrigger: {
-                                trigger: el,
-                                start: "top 85%",
-                                toggleActions: "play none none none"
-                              }
-                            }
-                          );
+                // G. THE SELF-HEALING & SAFE PHANTOM ENGINE (inject into clone)
+                const cloneBodyEl = clone.querySelector('body');
+                if (cloneBodyEl) {
+                  const engineScript = document.createElement('script');
+                  engineScript.innerHTML = \`
+                    // A. Image Self-Healing Fallback
+                    window.addEventListener('error', function(e) {
+                      if (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE') {
+                        const backupSrc = e.target.getAttribute('data-original-src');
+                        if (backupSrc && e.target.src !== backupSrc) {
+                          console.log('[CStudio] Auto-healing broken image:', backupSrc);
+                          e.target.src = backupSrc;
                         }
-                      });
-                      setTimeout(() => ScrollTrigger.refresh(), 500);
-                    } else if (chk > 50) clearInterval(intGSAP);
-                  }, 100);
-                \`;
-                document.body.appendChild(engineScript);
+                      }
+                    }, true);
 
-                console.log('[CStudio] DOM sanitization complete. Ready for capture.');
-                document.documentElement.outerHTML;
+                    // B. Load GSAP
+                    const s1 = document.createElement('script');
+                    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
+                    document.body.appendChild(s1);
+                    
+                    const s2 = document.createElement('script');
+                    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
+                    document.body.appendChild(s2);
+                    
+                    let chk = 0;
+                    const intGSAP = setInterval(() => {
+                      chk++;
+                      if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
+                        clearInterval(intGSAP);
+                        gsap.registerPlugin(ScrollTrigger);
+                        
+                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                        document.body.style.setProperty('overflow', 'auto', 'important');
+
+                        const viewportThreshold = window.innerHeight * 0.3;
+
+                        document.querySelectorAll('.cstudio-animate-me').forEach(el => {
+                          // CRITICAL FIX: Only animate elements BELOW the initial viewport
+                          const rect = el.getBoundingClientRect();
+                          if (rect.top > viewportThreshold) {
+                            gsap.fromTo(el, 
+                              { opacity: 0, y: 50 },
+                              { 
+                                opacity: 1, 
+                                y: 0, 
+                                duration: 1,
+                                ease: 'power2.out',
+                                scrollTrigger: {
+                                  trigger: el,
+                                  start: "top 85%",
+                                  toggleActions: "play none none none"
+                                }
+                              }
+                            );
+                          }
+                        });
+                        setTimeout(() => ScrollTrigger.refresh(), 500);
+                      } else if (chk > 50) clearInterval(intGSAP);
+                    }, 100);
+                  \`;
+                  cloneBodyEl.appendChild(engineScript);
+                }
+
+                // STEP 5: RETURN THE CLONE (live page untouched!)
+                console.log('[CStudio] Smart Clone Strategy complete. Live page protected.');
+                clone.outerHTML;
               `;
               
               chrome.devtools.inspectedWindow.eval(
