@@ -95,22 +95,50 @@ export const useAppSaveAllResource = () => {
               // 3. Remove all broken module scripts
               // 4. Inject our own GSAP Phantom Engine from CDN
               const captureScript = `
-                // 1. Force Absolute URLs (COMPREHENSIVE - handles all media types)
-                // Images with src
+                // 1. AGGRESSIVE ABSOLUTIZATION (Fix all image 404s)
+                
+                // Standard src attributes
                 document.querySelectorAll('img[src], source[src], video[src], audio[src], track[src], embed[src], iframe[src]').forEach(el => {
                   if (el.hasAttribute('src')) el.src = el.src;
                 });
                 
-                // Images with srcset (responsive images)
+                // AGGRESSIVE srcset handling (responsive images)
                 document.querySelectorAll('img[srcset], source[srcset]').forEach(el => {
                   if (el.hasAttribute('srcset')) {
                     const srcset = el.getAttribute('srcset');
                     const absoluteSrcset = srcset.split(',').map(part => {
-                      const [url, descriptor] = part.trim().split(/\\s+/);
-                      const absoluteUrl = new URL(url, window.location.href).href;
-                      return descriptor ? absoluteUrl + ' ' + descriptor : absoluteUrl;
+                      const trimmed = part.trim();
+                      const spaceIndex = trimmed.search(/\\s+/);
+                      if (spaceIndex === -1) {
+                        // No descriptor, just URL
+                        return new URL(trimmed, window.location.href).href;
+                      } else {
+                        // URL + descriptor (e.g., "image.jpg 2x")
+                        const url = trimmed.substring(0, spaceIndex);
+                        const descriptor = trimmed.substring(spaceIndex);
+                        return new URL(url, window.location.href).href + descriptor;
+                      }
                     }).join(', ');
                     el.setAttribute('srcset', absoluteSrcset);
+                  }
+                });
+                
+                // AGGRESSIVE data-srcset handling (lazy loading)
+                document.querySelectorAll('[data-srcset]').forEach(el => {
+                  if (el.hasAttribute('data-srcset')) {
+                    const srcset = el.getAttribute('data-srcset');
+                    const absoluteSrcset = srcset.split(',').map(part => {
+                      const trimmed = part.trim();
+                      const spaceIndex = trimmed.search(/\\s+/);
+                      if (spaceIndex === -1) {
+                        return new URL(trimmed, window.location.href).href;
+                      } else {
+                        const url = trimmed.substring(0, spaceIndex);
+                        const descriptor = trimmed.substring(spaceIndex);
+                        return new URL(url, window.location.href).href + descriptor;
+                      }
+                    }).join(', ');
+                    el.setAttribute('data-srcset', absoluteSrcset);
                   }
                 });
                 
@@ -153,20 +181,68 @@ export const useAppSaveAllResource = () => {
                   }
                 });
                 
-                // 2. The Hydration Nuke (Kill React gracefully)
+                // 2. THE EXECUTIONER (Fix blank screen & remove tracking)
+                console.log('[CStudio] Starting aggressive script cleanup...');
+                
+                document.querySelectorAll('script').forEach(script => {
+                  let shouldRemove = false;
+                  
+                  // Check inline script content for fatal patterns
+                  if (script.innerHTML) {
+                    const content = script.innerHTML;
+                    if (
+                      content.includes('streamController') ||
+                      content.includes('__reactRouterContext') ||
+                      content.includes('__remixContext') ||
+                      content.includes('__remixManifest') ||
+                      content.includes('__remixRouteModules') ||
+                      content.includes('window.__remixRouter')
+                    ) {
+                      shouldRemove = true;
+                      console.log('[CStudio] Removing fatal inline script:', content.substring(0, 100));
+                    }
+                  }
+                  
+                  // Check external script src for tracking/analytics
+                  if (script.src) {
+                    const src = script.src.toLowerCase();
+                    if (
+                      src.includes('hs-scripts') ||
+                      src.includes('hubspot') ||
+                      src.includes('collectedforms') ||
+                      src.includes('embed.js') ||
+                      src.includes('analytics') ||
+                      src.includes('gtag') ||
+                      src.includes('google-analytics') ||
+                      src.includes('googletagmanager') ||
+                      src.includes('facebook.net') ||
+                      src.includes('doubleclick') ||
+                      src.includes('hotjar')
+                    ) {
+                      shouldRemove = true;
+                      console.log('[CStudio] Removing tracking script:', script.src);
+                    }
+                  }
+                  
+                  if (shouldRemove) {
+                    script.remove();
+                  }
+                });
+                
+                // 3. The Hydration Nuke (Kill React gracefully)
                 const rootDiv = document.getElementById('root') || document.querySelector('[data-reactroot]') || document.querySelector('#app');
                 if (rootDiv) {
                   rootDiv.id = 'cstudio-isolated-root';
                   rootDiv.removeAttribute('data-reactroot');
                 }
                 
-                // 3. Clean the Crime Scene (Remove their broken modules and our old shields)
+                // 4. Clean the Crime Scene (Remove their broken modules and our old shields)
                 document.querySelectorAll('link[rel="modulepreload"], script[type="module"]').forEach(el => el.remove());
                 document.querySelectorAll('script').forEach(s => {
                   if (s.innerHTML.includes('CStudio Shield') || s.innerHTML.includes('Phantom Engine')) s.remove();
                 });
                 
-                // 4. THE PHANTOM ENGINE (Inject our own standalone GSAP to bypass their React constraints)
+                // 5. THE PHANTOM ENGINE (Inject our own standalone GSAP to bypass their React constraints)
                 const phantomScript = document.createElement('script');
                 phantomScript.innerHTML = \`
                   (function() {
@@ -245,6 +321,7 @@ export const useAppSaveAllResource = () => {
                 \`;
                 document.body.appendChild(phantomScript);
                 
+                console.log('[CStudio] DOM sanitization complete. Ready for capture.');
                 document.documentElement.outerHTML;
               `;
               
