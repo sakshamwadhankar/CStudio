@@ -101,7 +101,17 @@ export const useAppSaveAllResource = () => {
                 document.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                   ['src', 'data-src', 'poster'].forEach(attr => {
                     if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
-                      try { el.setAttribute(attr, new URL(el.getAttribute(attr), liveBase).href); } catch(e){}
+                      try {
+                        const originalUrl = el.getAttribute(attr);
+                        const absoluteUrl = new URL(originalUrl, liveBase).href;
+                        
+                        // Store original URL for error handler fallback (Bug Fix: Image 404s)
+                        if (el.tagName.toLowerCase() === 'img' && attr === 'src') {
+                          el.setAttribute('data-original-src', absoluteUrl);
+                        }
+                        
+                        el.setAttribute(attr, absoluteUrl);
+                      } catch(e){}
                     }
                   });
                   ['srcset', 'data-srcset'].forEach(attr => {
@@ -172,6 +182,15 @@ export const useAppSaveAllResource = () => {
                   el.classList.add('cstudio-animate-me');
                 });
                 
+                // D. IMAGE ERROR HANDLER (Self-Healing for 404s)
+                document.querySelectorAll('img').forEach(img => {
+                  img.addEventListener('error', () => {
+                    if (img.dataset.originalSrc && img.src !== img.dataset.originalSrc) {
+                      img.src = img.dataset.originalSrc;
+                    }
+                  });
+                });
+                
                 // 4. THE PHANTOM ENGINE (Deferred Animation)
                 const phantomScript = document.createElement('script');
                 phantomScript.innerHTML = \`
@@ -194,8 +213,16 @@ export const useAppSaveAllResource = () => {
                         document.documentElement.style.setProperty('overflow', 'auto', 'important');
                         document.body.style.setProperty('overflow', 'auto', 'important');
                         
-                        // Use simplified selector - elements already tagged during pre-reveal
-                        const elementsToAnimate = document.querySelectorAll('.cstudio-animate-me');
+                        // Calculate viewport threshold (30% of viewport height)
+                        const viewportThreshold = window.innerHeight * 0.3;
+                        
+                        // Filter elements to exclude hero section (elements within viewport threshold)
+                        const allElements = document.querySelectorAll('.cstudio-animate-me');
+                        const elementsToAnimate = Array.from(allElements).filter(el => {
+                          const rect = el.getBoundingClientRect();
+                          return rect.top > viewportThreshold;
+                        });
+                        
                         elementsToAnimate.forEach(el => {
                           if (el.closest('.modal, [role="dialog"]')) return;
                           
