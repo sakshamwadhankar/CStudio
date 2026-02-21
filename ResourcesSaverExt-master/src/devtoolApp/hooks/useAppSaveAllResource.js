@@ -97,6 +97,32 @@ export const useAppSaveAllResource = () => {
               const captureScript = `
                 const liveBase = window.location.origin;
 
+                // ═══════════════════════════════════════════════════════════════
+                // GOD-MODE DOM CLEANSER 🧹🔥
+                // Removes VisBug UI, CSP blocks, and stuck preloaders
+                // ═══════════════════════════════════════════════════════════════
+
+                // A. KILL CSP & META REFRESH (Allows our CDN scripts to run)
+                document.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
+
+                // B. KILL VISBUG UI & EXTENSION LEFTOVERS (Fixes 'invalid/' error & invisible shields)
+                document.querySelectorAll('vis-bug, #visbug').forEach(el => el.remove());
+                document.querySelectorAll('[src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
+
+                // C. AGGRESSIVE PRELOADER NUKE (Kills full-screen loading overlays)
+                document.querySelectorAll('div, section').forEach(el => {
+                  const style = window.getComputedStyle(el);
+                  if (style.position === 'fixed' && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0')) {
+                    if (parseInt(style.zIndex) > 50) {
+                       el.style.setProperty('display', 'none', 'important');
+                       el.style.setProperty('opacity', '0', 'important');
+                       el.style.setProperty('pointer-events', 'none', 'important');
+                    }
+                  }
+                });
+
+                // ═══════════════════════════════════════════════════════════════
+
                 // 1. STORE ORIGINAL URLS & AGGRESSIVE ABSOLUTIZATION (Fixes 404s)
                 document.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                   ['src', 'data-src', 'poster'].forEach(attr => {
