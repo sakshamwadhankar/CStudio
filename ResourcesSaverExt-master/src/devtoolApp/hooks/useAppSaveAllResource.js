@@ -125,40 +125,54 @@ export const useAppSaveAllResource = () => {
                   }
                 });
                 
-                // 2. PRE-REVEAL (Fix the 2-second invisible FOIC issue)
-                // Strip the invisibility BEFORE saving the HTML so it's instantly visible on load.
-                const hiddenElements = document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video');
-                hiddenElements.forEach(el => {
-                  el.classList.remove('opacity-0');
-                  el.style.setProperty('opacity', '1', 'important');
-                  el.style.setProperty('visibility', 'visible', 'important');
-                  el.style.setProperty('transform', 'none', 'important');
-                  // Tag them so our Phantom Engine knows what to animate
-                  el.classList.add('cstudio-animate-me');
-                });
-                
-                // 3. THE ABSOLUTE NUKE (Kill all native scripts & fix blank screen crashes)
+                // 2. THE ABSOLUTE NUKE (Kill all native scripts & fix blank screen crashes)
                 document.querySelectorAll('script').forEach(script => {
                   if (script.src && script.src.includes('visbug')) return;
                   script.remove();
                 });
                 document.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
                 
-                // 4. SCROLL UNLOCKER (Kill Lenis)
+                // 3. PRE-REVEAL & SCROLL UNLOCKER (Execute BEFORE taking outerHTML snapshot)
+                console.log('[CStudio] Executing Pre-Reveal & Scroll Unlock...');
+                
+                // A. Scroll Unlocker (Kill Lenis before capture)
                 document.documentElement.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
                 document.body.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
                 document.documentElement.style.setProperty('overflow', 'auto', 'important');
                 document.body.style.setProperty('overflow', 'auto', 'important');
-                
-                // Hide rogue preloaders
+                document.documentElement.style.setProperty('height', 'auto', 'important');
+                document.body.style.setProperty('height', 'auto', 'important');
+
+                // B. Hide rogue full-screen preloaders getting captured
                 document.querySelectorAll('div').forEach(div => {
                   const style = window.getComputedStyle(div);
                   if (style.position === 'fixed' && parseInt(style.zIndex) > 1000 && parseInt(style.bottom) === 0) {
                     div.style.setProperty('display', 'none', 'important');
                   }
                 });
+
+                // C. PRE-REVEAL: Force visibility so saved HTML is instantly visible on load
+                const preRevealElements = document.querySelectorAll(
+                  '.opacity-0:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
+                  '[style*="opacity: 0"]:not([role="dialog"]):not([role="menu"]), ' +
+                  '[style*="visibility: hidden"]:not([role="dialog"]):not([role="menu"]), ' +
+                  'video'
+                );
+                preRevealElements.forEach(el => {
+                  if (el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) return;
+                  const computed = window.getComputedStyle(el);
+                  if (computed.display === 'none') return;
+                  
+                  el.classList.remove('opacity-0');
+                  el.style.setProperty('opacity', '1', 'important');
+                  el.style.setProperty('visibility', 'visible', 'important');
+                  el.style.setProperty('transform', 'none', 'important');
+                  
+                  // Tag for Phantom Engine to know what to animate later
+                  el.classList.add('cstudio-animate-me');
+                });
                 
-                // 5. THE PHANTOM ENGINE (Deferred Animation)
+                // 4. THE PHANTOM ENGINE (Deferred Animation)
                 const phantomScript = document.createElement('script');
                 phantomScript.innerHTML = \`
                   (function() {
@@ -180,6 +194,7 @@ export const useAppSaveAllResource = () => {
                         document.documentElement.style.setProperty('overflow', 'auto', 'important');
                         document.body.style.setProperty('overflow', 'auto', 'important');
                         
+                        // Use simplified selector - elements already tagged during pre-reveal
                         const elementsToAnimate = document.querySelectorAll('.cstudio-animate-me');
                         elementsToAnimate.forEach(el => {
                           if (el.closest('.modal, [role="dialog"]')) return;
