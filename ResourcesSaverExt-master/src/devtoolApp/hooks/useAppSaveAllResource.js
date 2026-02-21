@@ -95,194 +95,144 @@ export const useAppSaveAllResource = () => {
               // 3. Remove all broken module scripts
               // 4. Inject our own GSAP Phantom Engine from CDN
               const captureScript = `
-                const liveBase = window.location.origin;
+                (function() {
+                  try {
+                    const liveBase = window.location.origin;
 
-                // ==========================================
-                // PHASE 1: PRE-EVALUATE LIVE DOM (For getComputedStyle)
-                // ==========================================
-                // We must tag elements on the LIVE DOM because getComputedStyle 
-                // fails on cloned/detached nodes.
-
-                // Tag genuinely hidden elements for pre-reveal
-                document.querySelectorAll(
-                  '.opacity-0:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
-                  '[style*="opacity: 0"]:not([role="dialog"]):not([role="menu"]), ' +
-                  '[style*="visibility: hidden"]:not([role="dialog"]):not([role="menu"]), ' +
-                  'video'
-                ).forEach(el => {
-                  if (el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) return;
-                  const computed = window.getComputedStyle(el);
-                  if (computed.display !== 'none') {
-                    el.setAttribute('data-cstudio-hidden', 'true');
-                  }
-                });
-
-                // Tag full-screen preloaders to be nuked
-                document.querySelectorAll('div, section').forEach(el => {
-                  const style = window.getComputedStyle(el);
-                  if (style.position === 'fixed' && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0')) {
-                    if (parseInt(style.zIndex) > 50) {
-                      el.setAttribute('data-cstudio-preloader', 'true');
-                    }
-                  }
-                });
-
-                // ==========================================
-                // PHASE 2: CLONE THE DOM
-                // ==========================================
-                const clone = document.documentElement.cloneNode(true);
-
-                // ==========================================
-                // PHASE 3: CLEAN UP LIVE DOM (Leave no trace)
-                // ==========================================
-                document.querySelectorAll('[data-cstudio-hidden]').forEach(el => el.removeAttribute('data-cstudio-hidden'));
-                document.querySelectorAll('[data-cstudio-preloader]').forEach(el => el.removeAttribute('data-cstudio-preloader'));
-
-                // ==========================================
-                // PHASE 4: SANITIZE & MODIFY THE CLONE ONLY
-                // ==========================================
-
-                // A. KILL CSP & META REFRESH
-                clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
-
-                // B. KILL VISBUG UI & EXTENSION LEFTOVERS
-                clone.querySelectorAll('vis-bug, #visbug').forEach(el => el.remove());
-                clone.querySelectorAll('[src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
-
-                // C. STORE ORIGINAL URLS & AGGRESSIVE ABSOLUTIZATION (Fixes 404s)
-                clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
-                  ['src', 'data-src', 'poster'].forEach(attr => {
-                    if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
-                      const originalUrl = el.getAttribute(attr);
-                      el.setAttribute('data-original-src', new URL(originalUrl, liveBase).href);
-                      try { el.setAttribute(attr, new URL(originalUrl, liveBase).href); } catch(e){}
-                    }
-                  });
-                  ['srcset', 'data-srcset'].forEach(attr => {
-                    if (el.hasAttribute(attr)) {
-                      const originalSrcset = el.getAttribute(attr);
-                      const absoluteSrcset = originalSrcset.split(',').map(part => {
-                        const trimmed = part.trim();
-                        const spaceIdx = trimmed.search(/\\s+/);
-                        try {
-                          if (spaceIdx === -1) return new URL(trimmed, liveBase).href;
-                          return new URL(trimmed.substring(0, spaceIdx), liveBase).href + trimmed.substring(spaceIdx);
-                        } catch(e) { return part; }
-                      }).join(', ');
-                      el.setAttribute(attr, absoluteSrcset);
-                    }
-                  });
-                });
-
-                clone.querySelectorAll('link[href], a[href]').forEach(el => {
-                  if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
-                    try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
-                  }
-                });
-
-                // D. APPLY PRE-REVEAL (Using the tags from Phase 1)
-                clone.querySelectorAll('[data-cstudio-hidden="true"]').forEach(el => {
-                  el.classList.remove('opacity-0');
-                  const currentStyle = el.getAttribute('style') || '';
-                  const newStyle = currentStyle + '; opacity: 1 !important; visibility: visible !important; transform: none !important;';
-                  el.setAttribute('style', newStyle);
-                  el.classList.add('cstudio-animate-me');
-                  el.removeAttribute('data-cstudio-hidden');
-                });
-
-                // E. APPLY PRELOADER NUKE (Using the tags from Phase 1)
-                clone.querySelectorAll('[data-cstudio-preloader="true"]').forEach(el => {
-                  const currentStyle = el.getAttribute('style') || '';
-                  const newStyle = currentStyle + '; display: none !important; opacity: 0 !important; pointer-events: none !important;';
-                  el.setAttribute('style', newStyle);
-                  el.removeAttribute('data-cstudio-preloader');
-                });
-
-                // F. SCROLL UNLOCK
-                const cloneBody = clone.querySelector('body');
-                if (cloneBody) {
-                  const bodyStyle = cloneBody.getAttribute('style') || '';
-                  cloneBody.setAttribute('style', bodyStyle + '; overflow: auto !important; height: auto !important;');
-                  cloneBody.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-                }
-                const htmlStyle = clone.getAttribute('style') || '';
-                clone.setAttribute('style', htmlStyle + '; overflow: auto !important; height: auto !important;');
-                clone.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-
-                // G. THE ABSOLUTE NUKE (Kill native scripts)
-                clone.querySelectorAll('script').forEach(script => {
-                  if (script.src && script.src.includes('visbug')) return;
-                  script.remove();
-                });
-                clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
-
-                // H. INJECT THE SELF-HEALING & SAFE PHANTOM ENGINE
-                const cloneBodyForScript = clone.querySelector('body');
-                if (cloneBodyForScript) {
-                  const engineScript = document.createElement('script');
-                  engineScript.innerHTML = \`
-                    // A. Image Self-Healing Fallback
-                    window.addEventListener('error', function(e) {
-                      if (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE' || e.target.tagName === 'VIDEO') {
-                        const backupSrc = e.target.getAttribute('data-original-src');
-                        if (backupSrc && (e.target.src !== backupSrc || e.target.srcset !== backupSrc)) {
-                          console.log('[CStudio] Auto-healing broken media:', backupSrc);
-                          if (e.target.src) e.target.src = backupSrc;
-                          if (e.target.srcset) e.target.srcset = backupSrc;
-                        }
+                    // 1. Tag Live DOM safely
+                    document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video').forEach(el => {
+                      if (!el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) {
+                        const comp = window.getComputedStyle(el);
+                        if (comp && comp.display !== 'none') el.setAttribute('data-cstudio-hidden', 'true');
                       }
-                    }, true);
+                    });
 
-                    // B. Load GSAP
-                    const s1 = document.createElement('script');
-                    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-                    document.body.appendChild(s1);
-                    
-                    const s2 = document.createElement('script');
-                    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
-                    document.body.appendChild(s2);
-                    
-                    let chk = 0;
-                    const intGSAP = setInterval(() => {
-                      chk++;
-                      if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
-                        clearInterval(intGSAP);
-                        gsap.registerPlugin(ScrollTrigger);
-                        
-                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
-                        document.body.style.setProperty('overflow', 'auto', 'important');
+                    document.querySelectorAll('div, section').forEach(el => {
+                      const style = window.getComputedStyle(el);
+                      if (style && style.position === 'fixed' && parseInt(style.zIndex) > 50 && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0')) {
+                        el.setAttribute('data-cstudio-preloader', 'true');
+                      }
+                    });
 
-                        const viewportThreshold = window.innerHeight * 0.3;
+                    // 2. Clone the DOM
+                    const clone = document.documentElement.cloneNode(true);
 
-                        document.querySelectorAll('.cstudio-animate-me').forEach(el => {
-                          // CRITICAL FIX: Only animate elements BELOW the initial viewport
-                          const rect = el.getBoundingClientRect();
-                          if (rect.top > viewportThreshold) {
-                            gsap.fromTo(el, 
-                              { opacity: 0, y: 50 },
-                              { 
-                                opacity: 1, 
-                                y: 0, 
-                                duration: 1,
-                                ease: 'power2.out',
-                                scrollTrigger: {
-                                  trigger: el,
-                                  start: "top 85%",
-                                  toggleActions: "play none none none"
-                                }
-                              }
-                            );
+                    // 3. Clean up live DOM
+                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader]').forEach(el => {
+                      el.removeAttribute('data-cstudio-hidden');
+                      el.removeAttribute('data-cstudio-preloader');
+                    });
+
+                    // 4. Sanitize the Clone safely
+                    clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
+                    clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
+
+                    clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
+                      ['src', 'data-src', 'poster'].forEach(attr => {
+                        if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
+                          const originalUrl = el.getAttribute(attr);
+                          el.setAttribute('data-original-src', new URL(originalUrl, liveBase).href);
+                          try { el.setAttribute(attr, new URL(originalUrl, liveBase).href); } catch(e){}
+                        }
+                      });
+                      ['srcset', 'data-srcset'].forEach(attr => {
+                        if (el.hasAttribute(attr)) {
+                          const originalSrcset = el.getAttribute(attr);
+                          const absoluteSrcset = originalSrcset.split(',').map(part => {
+                            const trimmed = part.trim();
+                            const spaceIdx = trimmed.search(/\\s+/);
+                            try {
+                              if (spaceIdx === -1) return new URL(trimmed, liveBase).href;
+                              return new URL(trimmed.substring(0, spaceIdx), liveBase).href + trimmed.substring(spaceIdx);
+                            } catch(e) { return part; }
+                          }).join(', ');
+                          el.setAttribute(attr, absoluteSrcset);
+                        }
+                      });
+                    });
+
+                    clone.querySelectorAll('link[href], a[href]').forEach(el => {
+                      if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
+                        try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
+                      }
+                    });
+
+                    clone.querySelectorAll('[data-cstudio-hidden="true"]').forEach(el => {
+                      el.classList.remove('opacity-0');
+                      el.style.setProperty('opacity', '1', 'important');
+                      el.style.setProperty('visibility', 'visible', 'important');
+                      el.style.setProperty('transform', 'none', 'important');
+                      el.classList.add('cstudio-animate-me');
+                      el.removeAttribute('data-cstudio-hidden');
+                    });
+
+                    clone.querySelectorAll('[data-cstudio-preloader="true"]').forEach(el => {
+                      el.style.setProperty('display', 'none', 'important');
+                      el.style.setProperty('opacity', '0', 'important');
+                      el.style.setProperty('pointer-events', 'none', 'important');
+                      el.removeAttribute('data-cstudio-preloader');
+                    });
+
+                    const body = clone.querySelector('body');
+                    if (body) {
+                      body.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                      body.style.setProperty('overflow', 'auto', 'important');
+                      body.style.setProperty('height', 'auto', 'important');
+                    }
+                    clone.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                    clone.style.setProperty('overflow', 'auto', 'important');
+                    clone.style.setProperty('height', 'auto', 'important');
+
+                    clone.querySelectorAll('script').forEach(script => {
+                      if (script.src && script.src.includes('visbug')) return;
+                      script.remove();
+                    });
+                    clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
+
+                    if (body) {
+                      const engineScript = document.createElement('script');
+                      engineScript.innerHTML = \`
+                        window.addEventListener('error', function(e) {
+                          if (e.target && (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE' || e.target.tagName === 'VIDEO')) {
+                            const backupSrc = e.target.getAttribute('data-original-src');
+                            if (backupSrc && (e.target.src !== backupSrc || e.target.srcset !== backupSrc)) {
+                              if (e.target.src) e.target.src = backupSrc;
+                              if (e.target.srcset) e.target.srcset = backupSrc;
+                            }
                           }
-                        });
-                        setTimeout(() => ScrollTrigger.refresh(), 500);
-                      } else if (chk > 50) clearInterval(intGSAP);
-                    }, 100);
-                  \`;
-                  cloneBodyForScript.appendChild(engineScript);
-                }
+                        }, true);
 
-                console.log('[CStudio] Clone sanitization complete. Ready for capture.');
-                clone.outerHTML;
+                        const s1 = document.createElement('script'); s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js'; document.body.appendChild(s1);
+                        const s2 = document.createElement('script'); s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js'; document.body.appendChild(s2);
+                        
+                        let chk = 0;
+                        const intGSAP = setInterval(() => {
+                          chk++;
+                          if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
+                            clearInterval(intGSAP);
+                            gsap.registerPlugin(ScrollTrigger);
+                            document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                            document.body.style.setProperty('overflow', 'auto', 'important');
+                            const thr = window.innerHeight * 0.3;
+                            document.querySelectorAll('.cstudio-animate-me').forEach(el => {
+                              const rect = el.getBoundingClientRect();
+                              if (rect.top > thr) {
+                                gsap.fromTo(el, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', scrollTrigger: { trigger: el, start: "top 85%" } });
+                              }
+                            });
+                            setTimeout(() => ScrollTrigger.refresh(), 500);
+                          } else if (chk > 50) clearInterval(intGSAP);
+                        }, 100);
+                      \`;
+                      body.appendChild(engineScript);
+                    }
+
+                    return clone.outerHTML;
+                  } catch (err) {
+                    // IF SCRIPT CRASHES, ADD ERROR TO HTML SO WE CAN DEBUG IT
+                    return "<!-- CRASH REPORT: " + err.message + " at line " + (err.lineNumber || 'unknown') + " -->\\n" + document.documentElement.outerHTML;
+                  }
+                })();
               `;
               
               chrome.devtools.inspectedWindow.eval(
