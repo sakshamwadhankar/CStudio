@@ -183,28 +183,31 @@ export const useAppSaveAllResource = () => {
                 // D. APPLY PRE-REVEAL (Using the tags from Phase 1)
                 clone.querySelectorAll('[data-cstudio-hidden="true"]').forEach(el => {
                   el.classList.remove('opacity-0');
-                  el.style.setProperty('opacity', '1', 'important');
-                  el.style.setProperty('visibility', 'visible', 'important');
-                  el.style.setProperty('transform', 'none', 'important');
+                  const currentStyle = el.getAttribute('style') || '';
+                  const newStyle = currentStyle + '; opacity: 1 !important; visibility: visible !important; transform: none !important;';
+                  el.setAttribute('style', newStyle);
                   el.classList.add('cstudio-animate-me');
                   el.removeAttribute('data-cstudio-hidden');
                 });
 
                 // E. APPLY PRELOADER NUKE (Using the tags from Phase 1)
                 clone.querySelectorAll('[data-cstudio-preloader="true"]').forEach(el => {
-                  el.style.setProperty('display', 'none', 'important');
-                  el.style.setProperty('opacity', '0', 'important');
-                  el.style.setProperty('pointer-events', 'none', 'important');
+                  const currentStyle = el.getAttribute('style') || '';
+                  const newStyle = currentStyle + '; display: none !important; opacity: 0 !important; pointer-events: none !important;';
+                  el.setAttribute('style', newStyle);
                   el.removeAttribute('data-cstudio-preloader');
                 });
 
                 // F. SCROLL UNLOCK
-                clone.querySelector('body').classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                const cloneBody = clone.querySelector('body');
+                if (cloneBody) {
+                  const bodyStyle = cloneBody.getAttribute('style') || '';
+                  cloneBody.setAttribute('style', bodyStyle + '; overflow: auto !important; height: auto !important;');
+                  cloneBody.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                }
+                const htmlStyle = clone.getAttribute('style') || '';
+                clone.setAttribute('style', htmlStyle + '; overflow: auto !important; height: auto !important;');
                 clone.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-                clone.style.setProperty('overflow', 'auto', 'important');
-                clone.querySelector('body').style.setProperty('overflow', 'auto', 'important');
-                clone.style.setProperty('height', 'auto', 'important');
-                clone.querySelector('body').style.setProperty('height', 'auto', 'important');
 
                 // G. THE ABSOLUTE NUKE (Kill native scripts)
                 clone.querySelectorAll('script').forEach(script => {
@@ -214,66 +217,69 @@ export const useAppSaveAllResource = () => {
                 clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
 
                 // H. INJECT THE SELF-HEALING & SAFE PHANTOM ENGINE
-                const engineScript = document.createElement('script');
-                engineScript.innerHTML = \`
-                  // A. Image Self-Healing Fallback
-                  window.addEventListener('error', function(e) {
-                    if (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE' || e.target.tagName === 'VIDEO') {
-                      const backupSrc = e.target.getAttribute('data-original-src');
-                      if (backupSrc && (e.target.src !== backupSrc || e.target.srcset !== backupSrc)) {
-                        console.log('[CStudio] Auto-healing broken media:', backupSrc);
-                        if (e.target.src) e.target.src = backupSrc;
-                        if (e.target.srcset) e.target.srcset = backupSrc;
-                      }
-                    }
-                  }, true);
-
-                  // B. Load GSAP
-                  const s1 = document.createElement('script');
-                  s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-                  document.body.appendChild(s1);
-                  
-                  const s2 = document.createElement('script');
-                  s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
-                  document.body.appendChild(s2);
-                  
-                  let chk = 0;
-                  const intGSAP = setInterval(() => {
-                    chk++;
-                    if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
-                      clearInterval(intGSAP);
-                      gsap.registerPlugin(ScrollTrigger);
-                      
-                      document.documentElement.style.setProperty('overflow', 'auto', 'important');
-                      document.body.style.setProperty('overflow', 'auto', 'important');
-
-                      const viewportThreshold = window.innerHeight * 0.3;
-
-                      document.querySelectorAll('.cstudio-animate-me').forEach(el => {
-                        // CRITICAL FIX: Only animate elements BELOW the initial viewport
-                        const rect = el.getBoundingClientRect();
-                        if (rect.top > viewportThreshold) {
-                          gsap.fromTo(el, 
-                            { opacity: 0, y: 50 },
-                            { 
-                              opacity: 1, 
-                              y: 0, 
-                              duration: 1,
-                              ease: 'power2.out',
-                              scrollTrigger: {
-                                trigger: el,
-                                start: "top 85%",
-                                toggleActions: "play none none none"
-                              }
-                            }
-                          );
+                const cloneBodyForScript = clone.querySelector('body');
+                if (cloneBodyForScript) {
+                  const engineScript = document.createElement('script');
+                  engineScript.innerHTML = \`
+                    // A. Image Self-Healing Fallback
+                    window.addEventListener('error', function(e) {
+                      if (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE' || e.target.tagName === 'VIDEO') {
+                        const backupSrc = e.target.getAttribute('data-original-src');
+                        if (backupSrc && (e.target.src !== backupSrc || e.target.srcset !== backupSrc)) {
+                          console.log('[CStudio] Auto-healing broken media:', backupSrc);
+                          if (e.target.src) e.target.src = backupSrc;
+                          if (e.target.srcset) e.target.srcset = backupSrc;
                         }
-                      });
-                      setTimeout(() => ScrollTrigger.refresh(), 500);
-                    } else if (chk > 50) clearInterval(intGSAP);
-                  }, 100);
-                \`;
-                clone.querySelector('body').appendChild(engineScript);
+                      }
+                    }, true);
+
+                    // B. Load GSAP
+                    const s1 = document.createElement('script');
+                    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
+                    document.body.appendChild(s1);
+                    
+                    const s2 = document.createElement('script');
+                    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
+                    document.body.appendChild(s2);
+                    
+                    let chk = 0;
+                    const intGSAP = setInterval(() => {
+                      chk++;
+                      if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
+                        clearInterval(intGSAP);
+                        gsap.registerPlugin(ScrollTrigger);
+                        
+                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                        document.body.style.setProperty('overflow', 'auto', 'important');
+
+                        const viewportThreshold = window.innerHeight * 0.3;
+
+                        document.querySelectorAll('.cstudio-animate-me').forEach(el => {
+                          // CRITICAL FIX: Only animate elements BELOW the initial viewport
+                          const rect = el.getBoundingClientRect();
+                          if (rect.top > viewportThreshold) {
+                            gsap.fromTo(el, 
+                              { opacity: 0, y: 50 },
+                              { 
+                                opacity: 1, 
+                                y: 0, 
+                                duration: 1,
+                                ease: 'power2.out',
+                                scrollTrigger: {
+                                  trigger: el,
+                                  start: "top 85%",
+                                  toggleActions: "play none none none"
+                                }
+                              }
+                            );
+                          }
+                        });
+                        setTimeout(() => ScrollTrigger.refresh(), 500);
+                      } else if (chk > 50) clearInterval(intGSAP);
+                    }, 100);
+                  \`;
+                  cloneBodyForScript.appendChild(engineScript);
+                }
 
                 console.log('[CStudio] Clone sanitization complete. Ready for capture.');
                 clone.outerHTML;
