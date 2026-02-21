@@ -70,10 +70,10 @@ export const useAppSaveAllResource = () => {
         ]);
 
         // ──────────────────────────────────────────────
-        // Phase 3: DOM Snapshot Engine + V3.0 Hydration Nuke
+        // Phase 3: DOM Snapshot Engine + V3.0 Smart Shield
         // ──────────────────────────────────────────────
         // Capture the "Live" HTML for the main page to fix empty React/Next.js shells.
-        // In V3.0 mode, rename React root to break hydration while keeping GSAP animations.
+        // In V3.0 mode, inject Smart Shield + force entry.client to wake up GSAP animations.
 
         const version = localStorage.getItem('resources-saver-version');
         const isV3Mode = version === '3';
@@ -89,41 +89,47 @@ export const useAppSaveAllResource = () => {
           dispatch(uiActions.setStatus(isV3Mode ? 'Capturing edited DOM (V3.0)...' : 'Snapshotting live DOM...'));
           try {
             const capturedDOM = await new Promise((resolveDOM) => {
-              // The V3.0 Hydration Nuke Strategy:
+              // The V3.0 Smart Shield Strategy:
               // 1. Force absolute URLs for proper resource mapping
-              // 2. Rename React root to break hydration targeting
-              // 3. Resurrect all preload scripts for GSAP execution
+              // 2. Inject Smart Shield that allows GSAP innerHTML but blocks React hydration
+              // 3. Resurrect all preload scripts
+              // 4. Force-inject the missing entry.client script
               const captureScript = `
-                // 1. Force Absolute URLs
+                // 1. Force Absolute URLs to fix broken media paths
                 document.querySelectorAll('link[href], script[src], img[src], source[src], a[href]').forEach(el => {
                   if (el.hasAttribute('href')) el.href = el.href;
                   if (el.hasAttribute('src')) el.src = el.src;
                 });
                 
-                // 2. The Hydration Nuke (Kill React's mapping, keep GSAP)
-                // React relies on 'data-reactroot' or specific ID structures (like '<div id="root">') to hydrate.
-                // By renaming the root ID and stripping React-specific attributes, React throws a hydration mismatch and aborts,
-                // BUT the JS execution thread continues, allowing standalone GSAP to run!
+                // 2. The Smart Anti-Hydration Shield (Allows GSAP, Blocks React Hydration)
+                const shieldScript = document.createElement('script');
+                shieldScript.innerHTML = "const _ih = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML'); Object.defineProperty(Element.prototype, 'innerHTML', { set: function (v) { if (this.classList && (this.classList.contains('gsap-split') || this.hasAttribute('data-gsap'))) { _ih.set.call(this, v); return; } console.log('[CStudio Shield] Blocked innerHTML'); }, get: _ih.get }); const _tx = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent'); Object.defineProperty(Node.prototype, 'textContent', { set: function(v) { }, get: _tx.get }); const _nv = Object.getOwnPropertyDescriptor(CharacterData.prototype, 'nodeValue'); Object.defineProperty(CharacterData.prototype, 'nodeValue', { set: function(v) { }, get: _nv.get });";
+                document.head.insertBefore(shieldScript, document.head.firstChild);
                 
-                const rootDiv = document.getElementById('root') || document.querySelector('[data-reactroot]') || document.querySelector('#app');
-                if (rootDiv) {
-                  rootDiv.id = 'cstudio-isolated-root';
-                  rootDiv.removeAttribute('data-reactroot');
-                }
-                
-                // Strip all React specific internal props from the DOM string later if needed
-                
-                // 3. Resurrect ALL preloads as actual scripts (Fixed to include everything)
+                // 3. Resurrect ALL preloads
                 document.querySelectorAll('link[rel="modulepreload"][href], link[rel="preload"][as="script"][href]').forEach(link => {
                   const src = link.href;
                   if (!document.querySelector('script[src="' + src + '"]')) {
                     const script = document.createElement('script');
-                    script.type = 'module'; // Keep module so imports work
+                    script.type = 'module';
                     script.src = src;
                     script.crossOrigin = '';
                     document.body.appendChild(script);
                   }
                 });
+                
+                // 4. FORCE-INJECT the missing Entry Client (The Main Engine)
+                const entryHints = Array.from(document.querySelectorAll('link[href*="entry.client"]'));
+                if (entryHints.length > 0) {
+                  const entrySrc = entryHints[0].href;
+                  if (!document.querySelector('script[src="' + entrySrc + '"]')) {
+                    const entryScript = document.createElement('script');
+                    entryScript.type = 'module';
+                    entryScript.src = entrySrc;
+                    entryScript.crossOrigin = '';
+                    document.body.appendChild(entryScript);
+                  }
+                }
                 
                 document.documentElement.outerHTML;
               `;
@@ -151,7 +157,7 @@ export const useAppSaveAllResource = () => {
 
               console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
               if (isV3Mode) {
-                console.log('[DEVTOOL] V3.0 Mode: Hydration Nuke applied - React will fail gracefully, GSAP will run');
+                console.log('[DEVTOOL] V3.0 Mode: Smart Shield + Entry.Client injection applied - GSAP will animate, React hydration blocked');
               }
               // This overrides the empty "Network Shell" with the actual rendered HTML
               mainResource.content = finalHTML;
