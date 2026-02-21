@@ -96,27 +96,21 @@ export const useAppSaveAllResource = () => {
               // 4. Inject our own GSAP Phantom Engine from CDN
               const captureScript = `
                 const liveBase = window.location.origin;
-                
-                // 1. BULLETPROOF MEDIA URLS (Force Live CDN to completely avoid local 404s)
+
+                // 1. STORE ORIGINAL URLS & AGGRESSIVE ABSOLUTIZATION (Fixes 404s)
                 document.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                   ['src', 'data-src', 'poster'].forEach(attr => {
                     if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
-                      try {
-                        const originalUrl = el.getAttribute(attr);
-                        const absoluteUrl = new URL(originalUrl, liveBase).href;
-                        
-                        // Store original URL for error handler fallback (Bug Fix: Image 404s)
-                        if (el.tagName.toLowerCase() === 'img' && attr === 'src') {
-                          el.setAttribute('data-original-src', absoluteUrl);
-                        }
-                        
-                        el.setAttribute(attr, absoluteUrl);
-                      } catch(e){}
+                      const originalUrl = el.getAttribute(attr);
+                      // Save backup for self-healing
+                      el.setAttribute('data-original-src', new URL(originalUrl, liveBase).href);
+                      try { el.setAttribute(attr, new URL(originalUrl, liveBase).href); } catch(e){}
                     }
                   });
                   ['srcset', 'data-srcset'].forEach(attr => {
                     if (el.hasAttribute(attr)) {
-                      const absoluteSrcset = el.getAttribute(attr).split(',').map(part => {
+                      const originalSrcset = el.getAttribute(attr);
+                      const absoluteSrcset = originalSrcset.split(',').map(part => {
                         const trimmed = part.trim();
                         const spaceIdx = trimmed.search(/\\s+/);
                         try {
@@ -128,46 +122,21 @@ export const useAppSaveAllResource = () => {
                     }
                   });
                 });
-                
+
                 document.querySelectorAll('link[href], a[href]').forEach(el => {
                   if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
                     try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
                   }
                 });
-                
-                // 2. THE ABSOLUTE NUKE (Kill all native scripts & fix blank screen crashes)
-                document.querySelectorAll('script').forEach(script => {
-                  if (script.src && script.src.includes('visbug')) return;
-                  script.remove();
-                });
-                document.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
-                
-                // 3. PRE-REVEAL & SCROLL UNLOCKER (Execute BEFORE taking outerHTML snapshot)
-                console.log('[CStudio] Executing Pre-Reveal & Scroll Unlock...');
-                
-                // A. Scroll Unlocker (Kill Lenis before capture)
-                document.documentElement.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-                document.body.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
-                document.documentElement.style.setProperty('overflow', 'auto', 'important');
-                document.body.style.setProperty('overflow', 'auto', 'important');
-                document.documentElement.style.setProperty('height', 'auto', 'important');
-                document.body.style.setProperty('height', 'auto', 'important');
 
-                // B. Hide rogue full-screen preloaders getting captured
-                document.querySelectorAll('div').forEach(div => {
-                  const style = window.getComputedStyle(div);
-                  if (style.position === 'fixed' && parseInt(style.zIndex) > 1000 && parseInt(style.bottom) === 0) {
-                    div.style.setProperty('display', 'none', 'important');
-                  }
-                });
-
-                // C. PRE-REVEAL: Force visibility so saved HTML is instantly visible on load
+                // 2. PRE-REVEAL & SCROLL UNLOCK (Instantly visible)
                 const preRevealElements = document.querySelectorAll(
                   '.opacity-0:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
                   '[style*="opacity: 0"]:not([role="dialog"]):not([role="menu"]), ' +
                   '[style*="visibility: hidden"]:not([role="dialog"]):not([role="menu"]), ' +
                   'video'
                 );
+                
                 preRevealElements.forEach(el => {
                   if (el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) return;
                   const computed = window.getComputedStyle(el);
@@ -177,81 +146,90 @@ export const useAppSaveAllResource = () => {
                   el.style.setProperty('opacity', '1', 'important');
                   el.style.setProperty('visibility', 'visible', 'important');
                   el.style.setProperty('transform', 'none', 'important');
-                  
-                  // Tag for Phantom Engine to know what to animate later
                   el.classList.add('cstudio-animate-me');
                 });
-                
-                // D. IMAGE ERROR HANDLER (Self-Healing for 404s)
-                document.querySelectorAll('img').forEach(img => {
-                  img.addEventListener('error', () => {
-                    if (img.dataset.originalSrc && img.src !== img.dataset.originalSrc) {
-                      img.src = img.dataset.originalSrc;
-                    }
-                  });
+
+                document.documentElement.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                document.body.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                document.body.style.setProperty('overflow', 'auto', 'important');
+
+                document.querySelectorAll('div').forEach(div => {
+                  const style = window.getComputedStyle(div);
+                  if (style.position === 'fixed' && parseInt(style.zIndex) > 1000 && parseInt(style.bottom) === 0) {
+                    div.style.setProperty('display', 'none', 'important');
+                  }
                 });
-                
-                // 4. THE PHANTOM ENGINE (Deferred Animation)
-                const phantomScript = document.createElement('script');
-                phantomScript.innerHTML = \`
-                  (function() {
-                    const s1 = document.createElement('script');
-                    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
-                    document.body.appendChild(s1);
-                    
-                    const s2 = document.createElement('script');
-                    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
-                    document.body.appendChild(s2);
-                    
-                    let checkCount = 0;
-                    const initGSAP = setInterval(() => {
-                      checkCount++;
-                      if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
-                        clearInterval(initGSAP);
-                        gsap.registerPlugin(ScrollTrigger);
-                        
-                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
-                        document.body.style.setProperty('overflow', 'auto', 'important');
-                        
-                        // Calculate viewport threshold (30% of viewport height)
-                        const viewportThreshold = window.innerHeight * 0.3;
-                        
-                        // Filter elements to exclude hero section (elements within viewport threshold)
-                        const allElements = document.querySelectorAll('.cstudio-animate-me');
-                        const elementsToAnimate = Array.from(allElements).filter(el => {
-                          const rect = el.getBoundingClientRect();
-                          return rect.top > viewportThreshold;
-                        });
-                        
-                        elementsToAnimate.forEach(el => {
-                          if (el.closest('.modal, [role="dialog"]')) return;
-                          
-                          // Re-apply animation state cleanly now that GSAP is ready
+
+                // 3. THE ABSOLUTE NUKE (Kill native scripts)
+                document.querySelectorAll('script').forEach(script => {
+                  if (script.src && script.src.includes('visbug')) return;
+                  script.remove();
+                });
+                document.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
+
+                // 4. THE SELF-HEALING & SAFE PHANTOM ENGINE
+                const engineScript = document.createElement('script');
+                engineScript.innerHTML = \`
+                  // A. Image Self-Healing Fallback
+                  window.addEventListener('error', function(e) {
+                    if (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE') {
+                      const backupSrc = e.target.getAttribute('data-original-src');
+                      if (backupSrc && e.target.src !== backupSrc) {
+                        console.log('[CStudio] Auto-healing broken image:', backupSrc);
+                        e.target.src = backupSrc;
+                      }
+                    }
+                  }, true);
+
+                  // B. Load GSAP
+                  const s1 = document.createElement('script');
+                  s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
+                  document.body.appendChild(s1);
+                  
+                  const s2 = document.createElement('script');
+                  s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
+                  document.body.appendChild(s2);
+                  
+                  let chk = 0;
+                  const intGSAP = setInterval(() => {
+                    chk++;
+                    if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
+                      clearInterval(intGSAP);
+                      gsap.registerPlugin(ScrollTrigger);
+                      
+                      document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                      document.body.style.setProperty('overflow', 'auto', 'important');
+
+                      const viewportThreshold = window.innerHeight * 0.3;
+
+                      document.querySelectorAll('.cstudio-animate-me').forEach(el => {
+                        // CRITICAL FIX: Only animate elements BELOW the initial viewport
+                        const rect = el.getBoundingClientRect();
+                        if (rect.top > viewportThreshold) {
                           gsap.fromTo(el, 
-                            { opacity: 0, y: 40 },
-                            {
-                              opacity: 1,
-                              y: 0,
+                            { opacity: 0, y: 50 },
+                            { 
+                              opacity: 1, 
+                              y: 0, 
                               duration: 1,
-                              ease: "power2.out",
+                              ease: 'power2.out',
                               scrollTrigger: {
                                 trigger: el,
-                                start: "top 90%",
+                                start: "top 85%",
                                 toggleActions: "play none none none"
                               }
                             }
                           );
-                        });
-                        
-                        setTimeout(() => ScrollTrigger.refresh(), 500);
-                      } else if (checkCount > 50) {
-                        clearInterval(initGSAP);
-                      }
-                    }, 100);
-                  })();
+                        }
+                      });
+                      setTimeout(() => ScrollTrigger.refresh(), 500);
+                    } else if (chk > 50) clearInterval(intGSAP);
+                  }, 100);
                 \`;
-                document.body.appendChild(phantomScript);
-                
+                document.body.appendChild(engineScript);
+
+                console.log('[CStudio] DOM sanitization complete. Ready for capture.');
                 document.documentElement.outerHTML;
               `;
               
