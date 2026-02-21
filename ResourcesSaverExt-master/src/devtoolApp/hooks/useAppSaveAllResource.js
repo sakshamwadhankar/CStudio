@@ -95,233 +95,121 @@ export const useAppSaveAllResource = () => {
               // 3. Remove all broken module scripts
               // 4. Inject our own GSAP Phantom Engine from CDN
               const captureScript = `
-                // 1. AGGRESSIVE ABSOLUTIZATION (Fix all image 404s)
+                const liveBase = window.location.origin;
                 
-                // Standard src attributes
-                document.querySelectorAll('img[src], source[src], video[src], audio[src], track[src], embed[src], iframe[src]').forEach(el => {
-                  if (el.hasAttribute('src')) el.src = el.src;
+                // 1. BULLETPROOF MEDIA URLS (Force Live CDN to completely avoid local 404s)
+                document.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
+                  ['src', 'data-src', 'poster'].forEach(attr => {
+                    if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
+                      try { el.setAttribute(attr, new URL(el.getAttribute(attr), liveBase).href); } catch(e){}
+                    }
+                  });
+                  ['srcset', 'data-srcset'].forEach(attr => {
+                    if (el.hasAttribute(attr)) {
+                      const absoluteSrcset = el.getAttribute(attr).split(',').map(part => {
+                        const trimmed = part.trim();
+                        const spaceIdx = trimmed.search(/\\s+/);
+                        try {
+                          if (spaceIdx === -1) return new URL(trimmed, liveBase).href;
+                          return new URL(trimmed.substring(0, spaceIdx), liveBase).href + trimmed.substring(spaceIdx);
+                        } catch(e) { return part; }
+                      }).join(', ');
+                      el.setAttribute(attr, absoluteSrcset);
+                    }
+                  });
                 });
                 
-                // AGGRESSIVE srcset handling (responsive images)
-                document.querySelectorAll('img[srcset], source[srcset]').forEach(el => {
-                  if (el.hasAttribute('srcset')) {
-                    const srcset = el.getAttribute('srcset');
-                    const absoluteSrcset = srcset.split(',').map(part => {
-                      const trimmed = part.trim();
-                      const spaceIndex = trimmed.search(/\\s+/);
-                      if (spaceIndex === -1) {
-                        // No descriptor, just URL
-                        return new URL(trimmed, window.location.href).href;
-                      } else {
-                        // URL + descriptor (e.g., "image.jpg 2x")
-                        const url = trimmed.substring(0, spaceIndex);
-                        const descriptor = trimmed.substring(spaceIndex);
-                        return new URL(url, window.location.href).href + descriptor;
-                      }
-                    }).join(', ');
-                    el.setAttribute('srcset', absoluteSrcset);
-                  }
-                });
-                
-                // AGGRESSIVE data-srcset handling (lazy loading)
-                document.querySelectorAll('[data-srcset]').forEach(el => {
-                  if (el.hasAttribute('data-srcset')) {
-                    const srcset = el.getAttribute('data-srcset');
-                    const absoluteSrcset = srcset.split(',').map(part => {
-                      const trimmed = part.trim();
-                      const spaceIndex = trimmed.search(/\\s+/);
-                      if (spaceIndex === -1) {
-                        return new URL(trimmed, window.location.href).href;
-                      } else {
-                        const url = trimmed.substring(0, spaceIndex);
-                        const descriptor = trimmed.substring(spaceIndex);
-                        return new URL(url, window.location.href).href + descriptor;
-                      }
-                    }).join(', ');
-                    el.setAttribute('data-srcset', absoluteSrcset);
-                  }
-                });
-                
-                // Video poster images
-                document.querySelectorAll('video[poster]').forEach(el => {
-                  if (el.hasAttribute('poster')) {
-                    el.poster = el.poster;
-                  }
-                });
-                
-                // Links and stylesheets
                 document.querySelectorAll('link[href], a[href]').forEach(el => {
-                  if (el.hasAttribute('href')) el.href = el.href;
-                });
-                
-                // Scripts
-                document.querySelectorAll('script[src]').forEach(el => {
-                  if (el.hasAttribute('src')) el.src = el.src;
-                });
-                
-                // Lazy-loaded images (data-src pattern)
-                document.querySelectorAll('[data-src]').forEach(el => {
-                  const dataSrc = el.getAttribute('data-src');
-                  if (dataSrc && !dataSrc.startsWith('data:')) {
-                    const absoluteUrl = new URL(dataSrc, window.location.href).href;
-                    el.setAttribute('data-src', absoluteUrl);
+                  if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
+                    try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
                   }
                 });
                 
-                // Background images in inline styles
-                document.querySelectorAll('[style*="background"]').forEach(el => {
-                  const style = el.getAttribute('style');
-                  if (style && style.includes('url(')) {
-                    const updatedStyle = style.replace(/url\\(['"]?([^'"\\)]+)['"]?\\)/g, (match, url) => {
-                      if (url.startsWith('data:') || url.startsWith('http')) return match;
-                      const absoluteUrl = new URL(url, window.location.href).href;
-                      return 'url("' + absoluteUrl + '")';
-                    });
-                    el.setAttribute('style', updatedStyle);
-                  }
+                // 2. PRE-REVEAL (Fix the 2-second invisible FOIC issue)
+                // Strip the invisibility BEFORE saving the HTML so it's instantly visible on load.
+                const hiddenElements = document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video');
+                hiddenElements.forEach(el => {
+                  el.classList.remove('opacity-0');
+                  el.style.setProperty('opacity', '1', 'important');
+                  el.style.setProperty('visibility', 'visible', 'important');
+                  el.style.setProperty('transform', 'none', 'important');
+                  // Tag them so our Phantom Engine knows what to animate
+                  el.classList.add('cstudio-animate-me');
                 });
                 
-                // 2. THE EXECUTIONER (Fix blank screen & remove tracking)
-                console.log('[CStudio] Starting aggressive script cleanup...');
-                
+                // 3. THE ABSOLUTE NUKE (Kill all native scripts & fix blank screen crashes)
                 document.querySelectorAll('script').forEach(script => {
-                  let shouldRemove = false;
-                  
-                  // Check inline script content for fatal patterns
-                  if (script.innerHTML) {
-                    const content = script.innerHTML;
-                    if (
-                      content.includes('streamController') ||
-                      content.includes('__reactRouterContext') ||
-                      content.includes('__remixContext') ||
-                      content.includes('__remixManifest') ||
-                      content.includes('__remixRouteModules') ||
-                      content.includes('window.__remixRouter')
-                    ) {
-                      shouldRemove = true;
-                      console.log('[CStudio] Removing fatal inline script:', content.substring(0, 100));
-                    }
-                  }
-                  
-                  // Check external script src for tracking/analytics
-                  if (script.src) {
-                    const src = script.src.toLowerCase();
-                    if (
-                      src.includes('hs-scripts') ||
-                      src.includes('hubspot') ||
-                      src.includes('collectedforms') ||
-                      src.includes('embed.js') ||
-                      src.includes('analytics') ||
-                      src.includes('gtag') ||
-                      src.includes('google-analytics') ||
-                      src.includes('googletagmanager') ||
-                      src.includes('facebook.net') ||
-                      src.includes('doubleclick') ||
-                      src.includes('hotjar')
-                    ) {
-                      shouldRemove = true;
-                      console.log('[CStudio] Removing tracking script:', script.src);
-                    }
-                  }
-                  
-                  if (shouldRemove) {
-                    script.remove();
+                  if (script.src && script.src.includes('visbug')) return;
+                  script.remove();
+                });
+                document.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
+                
+                // 4. SCROLL UNLOCKER (Kill Lenis)
+                document.documentElement.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                document.body.classList.remove('lenis', 'lenis-smooth', 'lenis-stopped');
+                document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                document.body.style.setProperty('overflow', 'auto', 'important');
+                
+                // Hide rogue preloaders
+                document.querySelectorAll('div').forEach(div => {
+                  const style = window.getComputedStyle(div);
+                  if (style.position === 'fixed' && parseInt(style.zIndex) > 1000 && parseInt(style.bottom) === 0) {
+                    div.style.setProperty('display', 'none', 'important');
                   }
                 });
                 
-                // 3. The Hydration Nuke (Kill React gracefully)
-                const rootDiv = document.getElementById('root') || document.querySelector('[data-reactroot]') || document.querySelector('#app');
-                if (rootDiv) {
-                  rootDiv.id = 'cstudio-isolated-root';
-                  rootDiv.removeAttribute('data-reactroot');
-                }
-                
-                // 4. Clean the Crime Scene (Remove their broken modules and our old shields)
-                document.querySelectorAll('link[rel="modulepreload"], script[type="module"]').forEach(el => el.remove());
-                document.querySelectorAll('script').forEach(s => {
-                  if (s.innerHTML.includes('CStudio Shield') || s.innerHTML.includes('Phantom Engine')) s.remove();
-                });
-                
-                // 5. THE PHANTOM ENGINE (Inject our own standalone GSAP to bypass their React constraints)
+                // 5. THE PHANTOM ENGINE (Deferred Animation)
                 const phantomScript = document.createElement('script');
                 phantomScript.innerHTML = \`
                   (function() {
-                    // Load Core GSAP
                     const s1 = document.createElement('script');
                     s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js';
                     document.body.appendChild(s1);
                     
-                    // Load ScrollTrigger
                     const s2 = document.createElement('script');
                     s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js';
                     document.body.appendChild(s2);
                     
-                    // Wait for both scripts to load
-                    let gsapLoaded = false;
-                    let scrollTriggerLoaded = false;
-                    
-                    s1.onload = () => { gsapLoaded = true; checkReady(); };
-                    s2.onload = () => { scrollTriggerLoaded = true; checkReady(); };
-                    
-                    function checkReady() {
-                      if (gsapLoaded && scrollTriggerLoaded && typeof gsap !== 'undefined') {
-                        initPhantomEngine();
-                      }
-                    }
-                    
-                    function initPhantomEngine() {
-                      gsap.registerPlugin(ScrollTrigger);
-                      console.log("🏴‍☠️ CStudio Phantom Engine Activated!");
-                      
-                      // Smart selector: only animate elements that are INTENTIONALLY hidden for scroll reveals
-                      // Exclude: modals, dropdowns, tooltips, nav menus
-                      const hiddenElements = document.querySelectorAll(
-                        '.opacity-0:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
-                        '[style*="opacity: 0"]:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
-                        '[style*="visibility: hidden"]:not([role="dialog"]):not([role="menu"]):not([role="tooltip"]), ' +
-                        'video, ' +
-                        '[data-gsap], [data-scroll], [data-animate]'
-                      );
-                      
-                      hiddenElements.forEach(el => {
-                        // Skip if element is inside a modal/dropdown container
-                        if (el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) return;
+                    let checkCount = 0;
+                    const initGSAP = setInterval(() => {
+                      checkCount++;
+                      if (typeof gsap !== 'undefined' && typeof ScrollTrigger !== 'undefined') {
+                        clearInterval(initGSAP);
+                        gsap.registerPlugin(ScrollTrigger);
                         
-                        // Skip if element has display:none (truly hidden, not for animation)
-                        const computed = window.getComputedStyle(el);
-                        if (computed.display === 'none') return;
+                        document.documentElement.style.setProperty('overflow', 'auto', 'important');
+                        document.body.style.setProperty('overflow', 'auto', 'important');
                         
-                        // Strip their restrictive CSS
-                        el.classList.remove('opacity-0');
-                        el.style.removeProperty('visibility');
-                        el.style.removeProperty('opacity');
-                        
-                        // Apply our own Premium Scroll Animation with delay to ensure GSAP is ready
-                        setTimeout(() => {
-                          gsap.from(el, {
-                            opacity: 0,
-                            y: 80,
-                            duration: 1.2,
-                            ease: "power3.out",
-                            scrollTrigger: {
-                              trigger: el,
-                              start: "top 85%",
-                              toggleActions: "play none none reverse"
+                        const elementsToAnimate = document.querySelectorAll('.cstudio-animate-me');
+                        elementsToAnimate.forEach(el => {
+                          if (el.closest('.modal, [role="dialog"]')) return;
+                          
+                          // Re-apply animation state cleanly now that GSAP is ready
+                          gsap.fromTo(el, 
+                            { opacity: 0, y: 40 },
+                            {
+                              opacity: 1,
+                              y: 0,
+                              duration: 1,
+                              ease: "power2.out",
+                              scrollTrigger: {
+                                trigger: el,
+                                start: "top 90%",
+                                toggleActions: "play none none none"
+                              }
                             }
-                          });
-                        }, 100);
-                      });
-                      
-                      // Refresh ScrollTrigger after all animations are set
-                      setTimeout(() => {
-                        ScrollTrigger.refresh();
-                      }, 500);
-                    }
+                          );
+                        });
+                        
+                        setTimeout(() => ScrollTrigger.refresh(), 500);
+                      } else if (checkCount > 50) {
+                        clearInterval(initGSAP);
+                      }
+                    }, 100);
                   })();
                 \`;
                 document.body.appendChild(phantomScript);
                 
-                console.log('[CStudio] DOM sanitization complete. Ready for capture.');
                 document.documentElement.outerHTML;
               `;
               
