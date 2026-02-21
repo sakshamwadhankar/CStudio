@@ -253,6 +253,14 @@ export const useAppSaveAllResource = () => {
                 (result, isException) => {
                   if (isException) {
                     console.log('[DEVTOOL] DOM Snapshot failed:', isException);
+                    
+                    // Check if it's an extension context invalidation error
+                    if (isException.code === 'E_PROTOCOLERROR' || 
+                        (isException.description && isException.description.includes('context invalidated'))) {
+                      console.error('[DEVTOOL] Extension context invalidated. Please close and reopen DevTools.');
+                      dispatch(uiActions.setStatus('ERROR: Extension context invalidated. Close and reopen DevTools.'));
+                    }
+                    
                     resolveDOM(null);
                   } else {
                     resolveDOM(result);
