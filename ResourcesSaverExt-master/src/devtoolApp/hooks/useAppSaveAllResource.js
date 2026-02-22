@@ -99,7 +99,7 @@ export const useAppSaveAllResource = () => {
                   try {
                     const liveBase = window.location.origin;
 
-                    // 1. TAG LIVE DOM (Smart Clone Strategy)
+                    // 1. Tag Hidden & Preloaders safely on LIVE DOM
                     document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video').forEach(el => {
                       if (!el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) {
                         const comp = window.getComputedStyle(el);
@@ -107,52 +107,36 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // Tag ziddi Black Preloaders
                     document.querySelectorAll('div, section').forEach(el => {
                       const style = window.getComputedStyle(el);
-                      if (style && style.position === 'fixed' && parseInt(style.zIndex) > 50 && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0')) {
+                      if (style && style.position === 'fixed' && parseInt(style.zIndex) > 40 && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0' || style.backgroundColor === 'rgb(0, 0, 0)')) {
                         el.setAttribute('data-cstudio-preloader', 'true');
                       }
                     });
 
-                    // 2. CAPTURE VISBUG EDITS (THE BULLETPROOF DATA-ATTRIBUTE WAY)
-                    document.querySelectorAll('*').forEach(el => {
-                      if (el.style && el.style.length > 0) {
-                        el.setAttribute('data-cstudio-visbug-style', el.style.cssText);
-                      }
-                    });
-
-                    // 3. CLONE DOM
+                    // 2. CLONE DOM (Automatically preserves VisBug inline styles!)
                     const clone = document.documentElement.cloneNode(true);
 
-                    // 4. RESTORE VISBUG EDITS & CLEAN LIVE DOM
-                    // A. Clean Live DOM so user sees no trace
-                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader], [data-cstudio-visbug-style]').forEach(el => {
+                    // 3. Clean Live DOM
+                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader]').forEach(el => {
                       el.removeAttribute('data-cstudio-hidden');
                       el.removeAttribute('data-cstudio-preloader');
-                      el.removeAttribute('data-cstudio-visbug-style');
                     });
 
-                    // B. Restore VisBug styles exactly on the clone
-                    clone.querySelectorAll('[data-cstudio-visbug-style]').forEach(el => {
-                      const savedStyle = el.getAttribute('data-cstudio-visbug-style');
-                      if (savedStyle) {
-                        el.setAttribute('style', savedStyle);
-                      }
-                      el.removeAttribute('data-cstudio-visbug-style');
-                    });
-
-                    // 5. SANITIZE CLONE
+                    // 4. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
-                    clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
+                    clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
 
-                    // Fix images 404s
+                    // Safely Absolutize URLs (with strict try/catch on EVERY assignment)
                     clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                       ['src', 'data-src', 'poster'].forEach(attr => {
                         if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
                           const originalUrl = el.getAttribute(attr);
-                          el.setAttribute('data-original-src', new URL(originalUrl, liveBase).href);
-                          try { el.setAttribute(attr, new URL(originalUrl, liveBase).href); } catch(e){}
+                          try {
+                            const absUrl = new URL(originalUrl, liveBase).href;
+                            el.setAttribute('data-original-src', absUrl);
+                            el.setAttribute(attr, absUrl);
+                          } catch(e) {} // SAFE!
                         }
                       });
                       ['srcset', 'data-srcset'].forEach(attr => {
@@ -205,12 +189,18 @@ export const useAppSaveAllResource = () => {
                     clone.style.setProperty('overflow', 'auto', 'important');
                     clone.style.setProperty('height', 'auto', 'important');
 
-                    // C. ABSOLUTE NUKE: KILL REACT SSR MODULES
+                    // C. ABSOLUTE NUKE: KILL REACT / NEXT.JS SCRIPTS
                     clone.querySelectorAll('script').forEach(script => {
                       if (script.src && script.src.includes('visbug')) return;
+                      if (script.innerHTML && script.innerHTML.includes('CStudio')) return;
                       script.remove();
                     });
                     clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
+
+                    // Nuke Next.js inline data to guarantee no Hydration wipeout
+                    clone.querySelectorAll('#__NEXT_DATA__, #__nuxt, [id^="__next"]').forEach(el => {
+                      if(el.tagName === 'SCRIPT') el.remove();
+                    });
 
                     // 6. INJECT PHANTOM ENGINE
                     if (body) {
@@ -253,8 +243,8 @@ export const useAppSaveAllResource = () => {
 
                     return clone.outerHTML;
                   } catch (err) {
-                    // IF SCRIPT CRASHES, RETURN ORIGINAL HTML WITH CRASH REPORT
-                    return "<!-- CSTUDIO CRASH REPORT: " + err.message + " -->\n" + document.documentElement.outerHTML;
+                    console.error('[CStudio] Capture crash:', err);
+                    return document.documentElement.outerHTML;
                   }
                 })();
               `;
