@@ -115,16 +115,58 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 2. CLONE DOM 
+                    // 2. CAPTURE VISBUG EDITS BEFORE CLONING
+                    // VisBug adds inline styles, so we need to preserve them
+                    const visbugEditedElements = [];
+                    document.querySelectorAll('[style]').forEach(el => {
+                      // Store element path and its inline styles
+                      const path = [];
+                      let current = el;
+                      while (current && current !== document.documentElement) {
+                        const parent = current.parentElement;
+                        if (parent) {
+                          const index = Array.from(parent.children).indexOf(current);
+                          path.unshift({ tag: current.tagName, index: index });
+                        }
+                        current = parent;
+                      }
+                      visbugEditedElements.push({
+                        path: path,
+                        styles: el.style.cssText
+                      });
+                    });
+
+                    // 3. CLONE DOM 
                     const clone = document.documentElement.cloneNode(true);
 
-                    // 3. CLEAN LIVE DOM
+                    // 4. RESTORE VISBUG EDITS TO CLONE
+                    visbugEditedElements.forEach(item => {
+                      try {
+                        let element = clone;
+                        for (const step of item.path) {
+                          const children = element.children;
+                          if (children[step.index] && children[step.index].tagName === step.tag) {
+                            element = children[step.index];
+                          } else {
+                            return; // Path not found, skip
+                          }
+                        }
+                        // Apply the captured inline styles
+                        if (element && item.styles) {
+                          element.setAttribute('style', item.styles);
+                        }
+                      } catch (e) {
+                        // Skip if path resolution fails
+                      }
+                    });
+
+                    // 5. CLEAN LIVE DOM
                     document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader]').forEach(el => {
                       el.removeAttribute('data-cstudio-hidden');
                       el.removeAttribute('data-cstudio-preloader');
                     });
 
-                    // 4. SANITIZE CLONE
+                    // 6. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
 
@@ -224,7 +266,7 @@ export const useAppSaveAllResource = () => {
                             document.querySelectorAll('.cstudio-animate-me').forEach(el => {
                               const rect = el.getBoundingClientRect();
                               if (rect.top > thr) {
-                                gsap.fromTo(el, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', scrollTrigger: { trigger: el, start: "top 85%" } });
+                                gsap.fromTo(el, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.2, ease: 'power2.out', scrollTrigger: { trigger: el, start: "top 85%" } });
                               }
                             });
                             setTimeout(() => ScrollTrigger.refresh(), 500);
@@ -236,25 +278,25 @@ export const useAppSaveAllResource = () => {
 
                     return clone.outerHTML;
                   } catch (err) {
-                    // IF SCRIPT CRASHES, RETURN ORIGINAL HTML (no crash report to avoid breaking HTML structure)
-                    return "\\n" + document.documentElement.outerHTML;
+                    // IF SCRIPT CRASHES, RETURN ORIGINAL HTML WITH CRASH REPORT
+                    return "<!-- CSTUDIO CRASH REPORT: " + err.message + " -->\n" + document.documentElement.outerHTML;
                   }
                 })();
               `;
-              
+
               chrome.devtools.inspectedWindow.eval(
                 captureScript,
                 (result, isException) => {
                   if (isException) {
                     console.log('[DEVTOOL] DOM Snapshot failed:', isException);
-                    
+
                     // Check if it's an extension context invalidation error
-                    if (isException.code === 'E_PROTOCOLERROR' || 
-                        (isException.description && isException.description.includes('context invalidated'))) {
+                    if (isException.code === 'E_PROTOCOLERROR' ||
+                      (isException.description && isException.description.includes('context invalidated'))) {
                       console.error('[DEVTOOL] Extension context invalidated. Please close and reopen DevTools.');
                       dispatch(uiActions.setStatus('ERROR: Extension context invalidated. Close and reopen DevTools.'));
                     }
-                    
+
                     resolveDOM(null);
                   } else {
                     resolveDOM(result);

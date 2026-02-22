@@ -9,15 +9,15 @@
   "author": "sakshamwadhankar",
   "license": "GPL-3.0+",
   "scripts": {
-    "dev": "yarn cp && parcel watch ./src/*.html --no-hmr --dist-dir unpacked2x",
-    "dev-serve": "yarn cp && parcel ./src/*.html --port 20987 --dist-dir unpacked2x",
-    "build": "yarn cp && parcel build ./src/*.html --dist-dir unpacked2x",
-    "cp": "yarn clean && mkdir -p unpacked2x && cp -r ./src/static/* unpacked2x",
-    "clean": "rm -rf .parcel-cache && rm -rf dist && rm -rf unpacked2x",
-    "reset": "yarn clean && rm -rf ./.cache && rm -rf ./.parcel-cache",
-    "local": "rm -rf ./node_modules/parcel-plugin-local && yarn install --check-files && yarn reset",
-    "auto": "rm -rf output && babel-node auto.js --presets @babel/preset-env",
-    "prettier": "yarn prettier"
+    "dev": "npm run cp && parcel watch ./src/*.html --no-hmr --dist-dir unpacked2x",
+    "dev-serve": "npm run cp && parcel ./src/*.html --port 20987 --dist-dir unpacked2x",
+    "build": "npm run cp && parcel build ./src/*.html --dist-dir unpacked2x",
+    "cp": "node scripts/build-prep.js",
+    "clean": "node -e \"const fs = require('fs'); ['dist', 'unpacked2x', '.parcel-cache'].forEach(d => fs.rmSync(d, {recursive: true, force: true}))\"",
+    "reset": "npm run clean && node -e \"fs.rmSync('.cache', {recursive: true, force: true})\"",
+    "local": "node -e \"fs.rmSync('node_modules/parcel-plugin-local', {recursive: true, force: true})\" && npm install && npm run reset",
+    "auto": "node -e \"fs.rmSync('output', {recursive: true, force: true})\" && babel-node auto.js --presets @babel/preset-env",
+    "prettier": "prettier --write ."
   },
   "alias": {
     "devtoolApp": "./src/devtoolApp",
