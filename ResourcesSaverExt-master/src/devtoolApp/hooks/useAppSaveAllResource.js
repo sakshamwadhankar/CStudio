@@ -99,7 +99,7 @@ export const useAppSaveAllResource = () => {
                   try {
                     const liveBase = window.location.origin;
 
-                    // 1. Tag Live DOM safely
+                    // 1. TAG LIVE DOM (Smart Clone Strategy)
                     document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video').forEach(el => {
                       if (!el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) {
                         const comp = window.getComputedStyle(el);
@@ -107,6 +107,7 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
+                    // Tag ziddi Black Preloaders
                     document.querySelectorAll('div, section').forEach(el => {
                       const style = window.getComputedStyle(el);
                       if (style && style.position === 'fixed' && parseInt(style.zIndex) > 50 && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0')) {
@@ -114,19 +115,20 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 2. Clone the DOM
+                    // 2. CLONE DOM 
                     const clone = document.documentElement.cloneNode(true);
 
-                    // 3. Clean up live DOM
+                    // 3. CLEAN LIVE DOM
                     document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader]').forEach(el => {
                       el.removeAttribute('data-cstudio-hidden');
                       el.removeAttribute('data-cstudio-preloader');
                     });
 
-                    // 4. Sanitize the Clone safely
+                    // 4. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
 
+                    // Fix images 404s
                     clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                       ['src', 'data-src', 'poster'].forEach(attr => {
                         if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
@@ -151,12 +153,14 @@ export const useAppSaveAllResource = () => {
                       });
                     });
 
+                    // Fix link hrefs
                     clone.querySelectorAll('link[href], a[href]').forEach(el => {
                       if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
                         try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
                       }
                     });
 
+                    // A. PRE-REVEAL ELEMENTS
                     clone.querySelectorAll('[data-cstudio-hidden="true"]').forEach(el => {
                       el.classList.remove('opacity-0');
                       el.style.setProperty('opacity', '1', 'important');
@@ -166,6 +170,7 @@ export const useAppSaveAllResource = () => {
                       el.removeAttribute('data-cstudio-hidden');
                     });
 
+                    // B. NUKE THE PRELOADERS
                     clone.querySelectorAll('[data-cstudio-preloader="true"]').forEach(el => {
                       el.style.setProperty('display', 'none', 'important');
                       el.style.setProperty('opacity', '0', 'important');
@@ -183,12 +188,14 @@ export const useAppSaveAllResource = () => {
                     clone.style.setProperty('overflow', 'auto', 'important');
                     clone.style.setProperty('height', 'auto', 'important');
 
+                    // C. ABSOLUTE NUKE: KILL REACT SSR MODULES
                     clone.querySelectorAll('script').forEach(script => {
                       if (script.src && script.src.includes('visbug')) return;
                       script.remove();
                     });
                     clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
 
+                    // 5. INJECT PHANTOM ENGINE
                     if (body) {
                       const engineScript = document.createElement('script');
                       engineScript.innerHTML = \`
@@ -229,8 +236,8 @@ export const useAppSaveAllResource = () => {
 
                     return clone.outerHTML;
                   } catch (err) {
-                    // IF SCRIPT CRASHES, ADD ERROR TO HTML SO WE CAN DEBUG IT
-                    return "<!-- CRASH REPORT: " + err.message + " at line " + (err.lineNumber || 'unknown') + " -->\\n" + document.documentElement.outerHTML;
+                    // IF SCRIPT CRASHES, RETURN ORIGINAL HTML (no crash report to avoid breaking HTML structure)
+                    return "\\n" + document.documentElement.outerHTML;
                   }
                 })();
               `;
