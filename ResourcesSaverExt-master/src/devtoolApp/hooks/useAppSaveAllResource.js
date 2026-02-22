@@ -114,7 +114,7 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 2. CLONE DOM (Automatically preserves VisBug inline styles!)
+                    // 2. CLONE DOM (Automatically preserves VisBug inline styles)
                     const clone = document.documentElement.cloneNode(true);
 
                     // 3. Clean Live DOM
@@ -127,7 +127,7 @@ export const useAppSaveAllResource = () => {
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
 
-                    // Safely Absolutize URLs (with strict try/catch on EVERY assignment)
+                    // Safely Absolutize URLs
                     clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                       ['src', 'data-src', 'poster'].forEach(attr => {
                         if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
@@ -136,7 +136,7 @@ export const useAppSaveAllResource = () => {
                             const absUrl = new URL(originalUrl, liveBase).href;
                             el.setAttribute('data-original-src', absUrl);
                             el.setAttribute(attr, absUrl);
-                          } catch(e) {} // SAFE!
+                          } catch(e) {}
                         }
                       });
                       ['srcset', 'data-srcset'].forEach(attr => {
@@ -158,6 +158,28 @@ export const useAppSaveAllResource = () => {
                     clone.querySelectorAll('link[href], a[href]').forEach(el => {
                       if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
                         try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
+                      }
+                    });
+
+                    // THE BLUR KILLER: Destroy all Next.js/Tailwind blur placeholders
+                    clone.querySelectorAll('*').forEach(el => {
+                      if (el.style) {
+                        if (el.style.filter && el.style.filter.includes('blur')) el.style.removeProperty('filter');
+                        if (el.style.backdropFilter && el.style.backdropFilter.includes('blur')) el.style.removeProperty('backdrop-filter');
+                        // Next.js Image specific blurry backgrounds
+                        if (el.tagName === 'IMG') {
+                          el.style.removeProperty('color');
+                          if (el.style.backgroundImage && el.style.backgroundImage.includes('data:image')) {
+                            el.style.removeProperty('background-image');
+                            el.style.removeProperty('background-size');
+                          }
+                          el.removeAttribute('loading');
+                          el.removeAttribute('decoding');
+                        }
+                      }
+                      // Remove Tailwind blur classes
+                      if (el.className && typeof el.className === 'string') {
+                        el.className = el.className.replace(/\\b(blur-[a-z0-9]+|backdrop-blur-[a-z0-9]+|blur)\\b/g, '').trim();
                       }
                     });
 
@@ -196,8 +218,6 @@ export const useAppSaveAllResource = () => {
                       script.remove();
                     });
                     clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
-
-                    // Nuke Next.js inline data to guarantee no Hydration wipeout
                     clone.querySelectorAll('#__NEXT_DATA__, #__nuxt, [id^="__next"]').forEach(el => {
                       if(el.tagName === 'SCRIPT') el.remove();
                     });
@@ -231,6 +251,9 @@ export const useAppSaveAllResource = () => {
                             document.querySelectorAll('.cstudio-animate-me').forEach(el => {
                               const rect = el.getBoundingClientRect();
                               if (rect.top > thr) {
+                                // CRITICAL: Strip the inline '!important' so GSAP can actually animate it
+                                el.style.removeProperty('opacity');
+                                el.style.removeProperty('transform');
                                 gsap.fromTo(el, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.2, ease: 'power2.out', scrollTrigger: { trigger: el, start: "top 85%" } });
                               }
                             });
