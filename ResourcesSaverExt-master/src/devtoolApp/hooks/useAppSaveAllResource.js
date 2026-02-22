@@ -115,58 +115,34 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 2. CAPTURE VISBUG EDITS BEFORE CLONING
-                    // VisBug adds inline styles, so we need to preserve them
-                    const visbugEditedElements = [];
-                    document.querySelectorAll('[style]').forEach(el => {
-                      // Store element path and its inline styles
-                      const path = [];
-                      let current = el;
-                      while (current && current !== document.documentElement) {
-                        const parent = current.parentElement;
-                        if (parent) {
-                          const index = Array.from(parent.children).indexOf(current);
-                          path.unshift({ tag: current.tagName, index: index });
-                        }
-                        current = parent;
+                    // 2. CAPTURE VISBUG EDITS (THE BULLETPROOF DATA-ATTRIBUTE WAY)
+                    document.querySelectorAll('*').forEach(el => {
+                      if (el.style && el.style.length > 0) {
+                        el.setAttribute('data-cstudio-visbug-style', el.style.cssText);
                       }
-                      visbugEditedElements.push({
-                        path: path,
-                        styles: el.style.cssText
-                      });
                     });
 
-                    // 3. CLONE DOM 
+                    // 3. CLONE DOM
                     const clone = document.documentElement.cloneNode(true);
 
-                    // 4. RESTORE VISBUG EDITS TO CLONE
-                    visbugEditedElements.forEach(item => {
-                      try {
-                        let element = clone;
-                        for (const step of item.path) {
-                          const children = element.children;
-                          if (children[step.index] && children[step.index].tagName === step.tag) {
-                            element = children[step.index];
-                          } else {
-                            return; // Path not found, skip
-                          }
-                        }
-                        // Apply the captured inline styles
-                        if (element && item.styles) {
-                          element.setAttribute('style', item.styles);
-                        }
-                      } catch (e) {
-                        // Skip if path resolution fails
-                      }
-                    });
-
-                    // 5. CLEAN LIVE DOM
-                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader]').forEach(el => {
+                    // 4. RESTORE VISBUG EDITS & CLEAN LIVE DOM
+                    // A. Clean Live DOM so user sees no trace
+                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader], [data-cstudio-visbug-style]').forEach(el => {
                       el.removeAttribute('data-cstudio-hidden');
                       el.removeAttribute('data-cstudio-preloader');
+                      el.removeAttribute('data-cstudio-visbug-style');
                     });
 
-                    // 6. SANITIZE CLONE
+                    // B. Restore VisBug styles exactly on the clone
+                    clone.querySelectorAll('[data-cstudio-visbug-style]').forEach(el => {
+                      const savedStyle = el.getAttribute('data-cstudio-visbug-style');
+                      if (savedStyle) {
+                        el.setAttribute('style', savedStyle);
+                      }
+                      el.removeAttribute('data-cstudio-visbug-style');
+                    });
+
+                    // 5. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"], [href^="invalid/"]').forEach(el => el.remove());
 
@@ -195,7 +171,6 @@ export const useAppSaveAllResource = () => {
                       });
                     });
 
-                    // Fix link hrefs
                     clone.querySelectorAll('link[href], a[href]').forEach(el => {
                       if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
                         try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
@@ -237,7 +212,7 @@ export const useAppSaveAllResource = () => {
                     });
                     clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
 
-                    // 5. INJECT PHANTOM ENGINE
+                    // 6. INJECT PHANTOM ENGINE
                     if (body) {
                       const engineScript = document.createElement('script');
                       engineScript.innerHTML = \`
