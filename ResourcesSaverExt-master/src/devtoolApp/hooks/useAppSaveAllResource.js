@@ -99,7 +99,7 @@ export const useAppSaveAllResource = () => {
                   try {
                     const liveBase = window.location.origin;
 
-                    // 1. Tag Hidden & Preloaders safely on LIVE DOM
+                    // 1. Tag Hidden & Preloaders
                     document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video').forEach(el => {
                       if (!el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) {
                         const comp = window.getComputedStyle(el);
@@ -114,7 +114,7 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 2. CLONE DOM (Automatically preserves VisBug inline styles)
+                    // 2. CLONE DOM 
                     const clone = document.documentElement.cloneNode(true);
 
                     // 3. Clean Live DOM
@@ -127,16 +127,18 @@ export const useAppSaveAllResource = () => {
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
 
-                    // Safely Absolutize URLs
+                    // FIXED: SMART URL ABSOLUTIZATION (Never break existing external links!)
                     clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
                       ['src', 'data-src', 'poster'].forEach(attr => {
-                        if (el.hasAttribute(attr) && !el.getAttribute(attr).startsWith('data:')) {
-                          const originalUrl = el.getAttribute(attr);
-                          try {
-                            const absUrl = new URL(originalUrl, liveBase).href;
-                            el.setAttribute('data-original-src', absUrl);
-                            el.setAttribute(attr, absUrl);
-                          } catch(e) {}
+                        if (el.hasAttribute(attr)) {
+                          const originalUrl = el.getAttribute(attr).trim();
+                          if (!originalUrl.startsWith('data:') && !originalUrl.startsWith('http') && !originalUrl.startsWith('//')) {
+                            try {
+                              const absUrl = new URL(originalUrl, liveBase).href;
+                              el.setAttribute('data-original-src', absUrl);
+                              el.setAttribute(attr, absUrl);
+                            } catch(e) {}
+                          }
                         }
                       });
                       ['srcset', 'data-srcset'].forEach(attr => {
@@ -144,6 +146,7 @@ export const useAppSaveAllResource = () => {
                           const originalSrcset = el.getAttribute(attr);
                           const absoluteSrcset = originalSrcset.split(',').map(part => {
                             const trimmed = part.trim();
+                            if (trimmed.startsWith('data:') || trimmed.startsWith('http') || trimmed.startsWith('//')) return part;
                             const spaceIdx = trimmed.search(/\\s+/);
                             try {
                               if (spaceIdx === -1) return new URL(trimmed, liveBase).href;
@@ -155,18 +158,11 @@ export const useAppSaveAllResource = () => {
                       });
                     });
 
-                    clone.querySelectorAll('link[href], a[href]').forEach(el => {
-                      if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('#') && !el.getAttribute('href').startsWith('data:')) {
-                        try { el.href = new URL(el.getAttribute('href'), liveBase).href; } catch(e){}
-                      }
-                    });
-
-                    // THE BLUR KILLER: Destroy all Next.js/Tailwind blur placeholders
+                    // THE BLUR KILLER 
                     clone.querySelectorAll('*').forEach(el => {
                       if (el.style) {
                         if (el.style.filter && el.style.filter.includes('blur')) el.style.removeProperty('filter');
                         if (el.style.backdropFilter && el.style.backdropFilter.includes('blur')) el.style.removeProperty('backdrop-filter');
-                        // Next.js Image specific blurry backgrounds
                         if (el.tagName === 'IMG') {
                           el.style.removeProperty('color');
                           if (el.style.backgroundImage && el.style.backgroundImage.includes('data:image')) {
@@ -177,7 +173,6 @@ export const useAppSaveAllResource = () => {
                           el.removeAttribute('decoding');
                         }
                       }
-                      // Remove Tailwind blur classes
                       if (el.className && typeof el.className === 'string') {
                         el.className = el.className.replace(/\\b(blur-[a-z0-9]+|backdrop-blur-[a-z0-9]+|blur)\\b/g, '').trim();
                       }
@@ -251,7 +246,6 @@ export const useAppSaveAllResource = () => {
                             document.querySelectorAll('.cstudio-animate-me').forEach(el => {
                               const rect = el.getBoundingClientRect();
                               if (rect.top > thr) {
-                                // CRITICAL: Strip the inline '!important' so GSAP can actually animate it
                                 el.style.removeProperty('opacity');
                                 el.style.removeProperty('transform');
                                 gsap.fromTo(el, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.2, ease: 'power2.out', scrollTrigger: { trigger: el, start: "top 85%" } });
