@@ -228,6 +228,18 @@ export const useAppSaveAllResource = () => {
                       });
                     });
 
+                    // FIXED: SMART URL ABSOLUTIZATION FOR LINKS AND ANCHORS
+                    clone.querySelectorAll('link[href], a[href]').forEach(el => {
+                      if (el.hasAttribute('href')) {
+                        const originalHref = el.getAttribute('href').trim();
+                        if (!originalHref.startsWith('#') && !originalHref.startsWith('data:') && !originalHref.startsWith('http') && !originalHref.startsWith('//')) {
+                          try { 
+                            el.href = new URL(originalHref, liveBase).href; 
+                          } catch(e) {}
+                        }
+                      }
+                    });
+
                     // THE BLUR KILLER 
                     clone.querySelectorAll('*').forEach(el => {
                       let blurFixed = false;
