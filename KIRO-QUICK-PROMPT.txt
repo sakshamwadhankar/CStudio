@@ -1,0 +1,14 @@
+Analyze the downloaded HTML files in this workspace and tell me:
+
+1. Search for "gsap.min.js" - is it present in any HTML file?
+2. Search for "cstudio-animate-me" class - how many elements have it?
+3. Check first line of index.html - is there a "<!-- CRASH REPORT:" comment?
+4. Count elements with "opacity: 0" or "visibility: hidden"
+5. List all <script> tags in the HTML
+6. Is there a Content-Security-Policy meta tag?
+7. Are there React/Next.js scripts (/_next/ or /static/chunks/)?
+
+Expected: GSAP scripts should be injected before </body>
+Actual: GSAP is missing, causing static page with no animations
+
+Please provide detailed findings with file names, line numbers, and exact content found.
