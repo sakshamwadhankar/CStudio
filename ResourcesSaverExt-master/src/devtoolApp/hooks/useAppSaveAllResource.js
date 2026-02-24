@@ -364,6 +364,55 @@ class AssetRipper {
       }
     });
   }
+
+  // ──────────────────────────────────────────────
+  // Stage 4: DOM URL Normalization
+  // ──────────────────────────────────────────────
+  normalizePathsToAbsolute(clone) {
+    const doc = clone.ownerDocument || document;
+    const base = doc.baseURI || window.location.href;
+    
+    console.log('[DEVTOOL] Stage 4: Normalizing relative URLs to absolute for CStudio URL replacer...');
+    let normalizedCount = 0;
+    
+    // Normalize hrefs and srcs
+    clone.querySelectorAll('[src], [href]').forEach(el => {
+      if (el.hasAttribute('src') && !el.getAttribute('src').startsWith('data:')) {
+        try {
+          const absoluteUrl = new URL(el.getAttribute('src'), base).href;
+          el.setAttribute('src', absoluteUrl);
+          normalizedCount++;
+        } catch (e) {
+          // Invalid URL, skip
+        }
+      }
+      if (el.hasAttribute('href') && !el.getAttribute('href').startsWith('data:') && !el.getAttribute('href').startsWith('#')) {
+        try {
+          const absoluteUrl = new URL(el.getAttribute('href'), base).href;
+          el.setAttribute('href', absoluteUrl);
+          normalizedCount++;
+        } catch (e) {
+          // Invalid URL, skip
+        }
+      }
+    });
+    
+    // Normalize inline CSS background-image urls
+    clone.querySelectorAll('[style*="url("]').forEach(el => {
+      let style = el.getAttribute('style');
+      style = style.replace(/url\(['"]?([^'"()]+)['"]?\)/g, (match, url) => {
+        if (url.startsWith('data:')) return match;
+        try {
+          return `url("${new URL(url, base).href}")`;
+        } catch (e) {
+          return match;
+        }
+      });
+      el.setAttribute('style', style);
+    });
+    
+    console.log(`[DEVTOOL] Stage 4: Normalized ${normalizedCount} URLs to absolute paths`);
+  }
 }
 
 class HTMLBeautifier {
@@ -832,6 +881,9 @@ export const useAppSaveAllResource = () => {
               console.log('[DEVTOOL] Stage 3: Structural Unwrapping - Melting div-ception...');
               const unwrappedCount = ripper.unwrapMeaninglessDivs(clone);
               console.log(`[DEVTOOL] Structural Unwrapping Complete: ${unwrappedCount} wrappers removed`);
+
+              // Stage 4: DOM URL Normalization - Convert relative paths to absolute for CStudio URL replacer
+              ripper.normalizePathsToAbsolute(clone);
 
               // Stage 5: HTML Beautifier - Generate clean, formatted HTML
               console.log('[DEVTOOL] Stage 5: HTML Beautifier - Formatting output...');
