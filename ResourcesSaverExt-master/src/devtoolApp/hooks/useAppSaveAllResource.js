@@ -708,12 +708,12 @@ export const useAppSaveAllResource = () => {
                       const csp = clone.ownerDocument.createElement('meta');
                       csp.setAttribute('http-equiv', 'Content-Security-Policy');
                       csp.setAttribute('content', 
-                        \`script-src 'nonce-\${nonce}' https://cdnjs.cloudflare.com; \` +
+                        \`script-src 'nonce-\${nonce}' 'unsafe-inline'; \` +
                         \`style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; \` +
-                        \`img-src * data: blob:; \` +
-                        \`font-src * data:; \` +
-                        \`connect-src 'none'; \` +
-                        \`media-src * data: blob:; \` +
+                        \`img-src * 'self' data: blob:; \` +
+                        \`font-src * 'self' data:; \` +
+                        \`connect-src 'self' ws://localhost:* http://localhost:*; \` +
+                        \`media-src * 'self' data: blob:; \` +
                         \`frame-src 'none'\`
                       );
                       head.insertBefore(csp, head.firstChild);
