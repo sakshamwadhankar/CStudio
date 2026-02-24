@@ -151,9 +151,18 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
 
       // Add extracted images (decode base64 data URIs)
       manifest.images.forEach(img => {
+        // Extract pure base64 from data URI
+        const dataURI = img.dataURI || '';
+        let base64Content = dataURI;
+        
+        // If it's a data URI, extract just the base64 part
+        if (dataURI.includes('base64,')) {
+          base64Content = dataURI.split('base64,')[1];
+        }
+        
         assetsToAdd.push({
           url: img.filename,
-          content: img.dataURI,
+          content: base64Content,
           encoding: 'base64',
           saveAs: {
             name: img.filename.split('/').pop(),
@@ -163,12 +172,15 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
       });
 
       console.log(`[DEVTOOL] DOM Unbuilder: Added ${manifest.svgs.length} SVGs and ${manifest.images.length} images to ZIP`);
-      delete item._assetManifest; // Clean up
+      // Don't delete manifest yet - keep it for debugging
+      // delete item._assetManifest;
     }
   });
 
   // Merge assets into the download list
   const finalDownloadList = [...toDownload, ...assetsToAdd];
+
+  console.log(`[DEVTOOL] Final download list contains ${finalDownloadList.length} items (${assetsToAdd.length} are extracted assets)`);
 
   const blobWrite = new zip.BlobWriter('application/zip');
   const zipWriter = new zip.ZipWriter(blobWrite);
@@ -184,8 +196,9 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
 
 // Create a reader of the content for zip
 export const getContentRead = (item) => {
-  if (item.encoding === 'base64') {
-    return new zip.Data64URIReader(item.content || 'No Content: ' + item.url);
+  // If content is Uint8Array (decoded base64), use Uint8ArrayReader
+  if (item.content instanceof Uint8Array) {
+    return new zip.Uint8ArrayReader(item.content);
   }
   if (item.content instanceof Blob) {
     return new zip.BlobReader(item.content);
@@ -252,17 +265,22 @@ export const addItemsToZipWriter = (zipWriter, items, options, resourceMap, each
 
     // Check whether base64 encoding is valid
     if (item.encoding === 'base64') {
-      // Try to decode first
+      // For base64 content, we need to decode it to binary
+      // The content should already be pure base64 (without data URI prefix)
       try {
-        atob(item.content);
-      } catch (err) {
-        console.log('[DEVTOOL]', item.url, ' is not base64 encoding, try to encode to base64.');
-        try {
-          item.content = btoa(item.content);
-        } catch (err) {
-          console.log('[DEVTOOL]', item.url, ' failed to encode to base64, fallback to text.');
-          item.encoding = null;
+        // Validate that it's valid base64
+        const binaryString = atob(item.content);
+        // Convert to Uint8Array for zip
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
         }
+        // Replace content with Uint8Array
+        item.content = bytes;
+        item.encoding = null; // Clear encoding flag since we've decoded it
+      } catch (err) {
+        console.log('[DEVTOOL]', item.url, ' base64 decode failed:', err);
+        item.encoding = null;
       }
     }
 
