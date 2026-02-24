@@ -13,6 +13,387 @@ import useStore from '../store';
  */
 const SUB_RESOURCE_SETTLE_MS = 1500;
 
+// ──────────────────────────────────────────────
+// DOM UNBUILDER PIPELINE - Stage 1 & 2
+// ──────────────────────────────────────────────
+
+const VOID_ELEMENTS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+const INLINE_ELEMENTS = new Set(['a','abbr','b','bdo','br','cite','code','dfn','em','i','img','input','kbd','label','mark','q','s','samp','small','span','strong','sub','sup','time','u','var','wbr']);
+const WHITESPACE_PRESERVE = new Set(['pre','code','textarea','script','style']);
+const _GROUPS = [
+  ['display','position','top','right','bottom','left','z-index','float','clear','isolation'],
+  ['box-sizing','width','height','min-width','min-height','max-width','max-height','margin-top','margin-right','margin-bottom','margin-left','padding-top','padding-right','padding-bottom','padding-left'],
+  ['flex-direction','flex-wrap','flex-grow','flex-shrink','flex-basis','justify-content','align-items','align-content','align-self','order','gap','row-gap','column-gap','grid-template-columns','grid-template-rows','grid-auto-flow','grid-auto-columns','grid-auto-rows','grid-column','grid-row'],
+  ['font-family','font-size','font-weight','font-style','line-height','letter-spacing','word-spacing','text-align','text-decoration','text-transform','color','white-space','word-break','overflow-wrap','text-overflow','vertical-align'],
+  ['background-color','background-image','background-size','background-position','background-repeat','background-clip','border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-style','border-right-style','border-bottom-style','border-left-style','border-top-color','border-right-color','border-bottom-color','border-left-color','border-top-left-radius','border-top-right-radius','border-bottom-right-radius','border-bottom-left-radius','box-shadow','text-shadow','outline','outline-offset','opacity','visibility'],
+  ['transform','transform-origin','filter','backdrop-filter','mix-blend-mode','clip-path','overflow','overflow-x','overflow-y','cursor','pointer-events','user-select','object-fit','object-position','aspect-ratio','list-style-type','list-style-position','scroll-snap-type','scroll-snap-align']
+];
+const PROP_ORDER = {};
+_GROUPS.forEach((group, gi) => { group.forEach((prop, pi) => { PROP_ORDER[prop] = gi * 100 + pi; }); });
+
+class AssetRipper {
+  constructor(config = {}) {
+    this.svgThreshold = config.svgThreshold || 1024;
+    this.b64Threshold = config.b64Threshold || 300;
+    this._svgCount = 0;
+    this._imgCount = 0;
+    this.manifest = { svgs: [], images: [], stats: { svgs: 0, images: 0, charsRemoved: 0 } };
+  }
+
+  run(clone) {
+    this._buildSpriteMap(clone);
+    this._extractInlineSVGs(clone);
+    this._extractBase64Src(clone);
+    this._extractBase64Backgrounds(clone);
+    this._extractBase64Srcset(clone);
+    this.manifest.stats.svgs = this.manifest.svgs.length;
+    this.manifest.stats.images = this.manifest.images.length;
+    return this.manifest;
+  }
+
+  _buildSpriteMap(clone) {
+    this._spriteMap = new Map();
+    clone.querySelectorAll('svg').forEach(svg => {
+      const style = svg.getAttribute('style') || '';
+      if (style.includes('display: none') || style.includes('display:none') || svg.hasAttribute('hidden')) {
+        svg.querySelectorAll('[id]').forEach(el => this._spriteMap.set(el.id, el.cloneNode(true)));
+        svg.setAttribute('data-cstudio-sprite-sheet', 'true');
+      }
+    });
+  }
+
+  _extractInlineSVGs(clone) {
+    const serializer = new XMLSerializer();
+    clone.querySelectorAll('svg').forEach(svg => {
+      if (svg.getAttribute('data-cstudio-sprite-sheet') === 'true') { svg.remove(); return; }
+      let svgString = serializer.serializeToString(svg);
+      if (svgString.length < this.svgThreshold) return;
+      this._resolveSpriteRefs(svg, clone);
+      this._resolveCurrentColor(svg);
+      if (!svg.hasAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      svgString = serializer.serializeToString(svg);
+      const id = `svg_${String(this._svgCount++).padStart(3, '0')}`;
+      const filename = `assets/icons/${id}.svg`;
+      this.manifest.svgs.push({ id, filename, content: svgString });
+      const img = svg.ownerDocument.createElement('img');
+      img.setAttribute('src', filename);
+      if (svg.getAttribute('style')) img.setAttribute('style', svg.getAttribute('style'));
+      svg.parentNode.replaceChild(img, svg);
+    });
+  }
+
+  _resolveSpriteRefs(svg, clone) {
+    svg.querySelectorAll('use').forEach(use => {
+      const href = use.getAttribute('href') || use.getAttribute('xlink:href');
+      if (href && href.startsWith('#')) {
+        const refId = href.slice(1);
+        let symbol = this._spriteMap.get(refId) || clone.querySelector(`#${CSS.escape(refId)}`);
+        if (symbol) {
+          let defs = svg.querySelector('defs') || svg.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          if (!svg.querySelector('defs')) svg.insertBefore(defs, svg.firstChild);
+          defs.appendChild(symbol.cloneNode(true));
+        }
+      }
+    });
+  }
+
+  _resolveCurrentColor(svg) {
+    const resolved = this._getInheritedColor(svg);
+    svg.querySelectorAll('[fill="currentColor"]').forEach(el => el.setAttribute('fill', resolved));
+    svg.querySelectorAll('[stroke="currentColor"]').forEach(el => el.setAttribute('stroke', resolved));
+  }
+
+  _getInheritedColor(element) {
+    let current = element.parentElement;
+    while (current) {
+      const style = current.getAttribute('style');
+      if (style) {
+        const match = style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
+        if (match && !['inherit', 'initial', 'unset'].includes(match[1].trim())) return match[1].trim();
+      }
+      current = current.parentElement;
+    }
+    return '#000000';
+  }
+
+  _extractBase64Src(clone) {
+    clone.querySelectorAll('[src^="data:"], [poster^="data:"]').forEach(el => {
+      const attr = el.hasAttribute('poster') ? 'poster' : 'src';
+      const data = el.getAttribute(attr);
+      if (data.length < this.b64Threshold) return;
+      const id = `img_${String(this._imgCount++).padStart(3, '0')}`;
+      const ext = data.split(';')[0].split('/')[1] || 'png';
+      const filename = `assets/images/${id}.${ext}`;
+      this.manifest.images.push({ id, filename, dataURI: data });
+      el.setAttribute(attr, filename);
+    });
+  }
+
+  _extractBase64Backgrounds(clone) {
+    clone.querySelectorAll('[style*="data:"]').forEach(el => {
+      let style = el.getAttribute('style');
+      const regex = /url\(\s*["']?(data:[^"')]*)["']?\s*\)/g;
+      let match;
+      while ((match = regex.exec(style)) !== null) {
+        const data = match[1];
+        if (data.length < this.b64Threshold) continue;
+        const id = `img_${String(this._imgCount++).padStart(3, '0')}`;
+        const filename = `assets/images/${id}.png`;
+        this.manifest.images.push({ id, filename, dataURI: data });
+        style = style.replace(data, filename);
+      }
+      el.setAttribute('style', style);
+    });
+  }
+
+  _extractBase64Srcset(clone) {} // Placeholder
+
+  // ──────────────────────────────────────────────
+  // Stage 3: Structural Unwrapping (Melting Div-ception)
+  // ──────────────────────────────────────────────
+  unwrapMeaninglessDivs(clone) {
+    let unwrappedCount = 0;
+    
+    // Process bottom-up: get all elements and reverse
+    const allElements = Array.from(clone.querySelectorAll('*')).reverse();
+    
+    allElements.forEach(el => {
+      // Only process divs and spans
+      if (el.tagName !== 'DIV' && el.tagName !== 'SPAN') return;
+      
+      // Skip if element has semantic meaning
+      if (this._hasSemanticMeaning(el)) return;
+      
+      // Skip if element has visual styles
+      if (this._hasVisualStyles(el)) return;
+      
+      // Element is meaningless - unwrap it
+      if (this._canUnwrap(el)) {
+        this._unwrapElement(el);
+        unwrappedCount++;
+      }
+    });
+    
+    // Clean framework roots
+    this._cleanFrameworkRoots(clone);
+    
+    console.log(`[DEVTOOL] Stage 3: Unwrapped ${unwrappedCount} meaningless divs`);
+    return unwrappedCount;
+  }
+
+  _hasSemanticMeaning(el) {
+    // Has ID, role, or ARIA attributes
+    if (el.hasAttribute('id')) return true;
+    if (el.hasAttribute('role')) return true;
+    
+    for (let attr of el.attributes) {
+      if (attr.name.startsWith('aria-')) return true;
+      if (attr.name.startsWith('data-cstudio-')) return true; // Preserve our markers
+    }
+    
+    return false;
+  }
+
+  _hasVisualStyles(el) {
+    const style = el.getAttribute('style') || '';
+    const computedStyle = style.toLowerCase();
+    
+    // Check for layout-defining display modes
+    if (computedStyle.includes('display: flex') || 
+        computedStyle.includes('display:flex') ||
+        computedStyle.includes('display: grid') ||
+        computedStyle.includes('display:grid') ||
+        computedStyle.includes('display: table') ||
+        computedStyle.includes('display:table')) {
+      return true;
+    }
+    
+    // Check for positioning
+    if (computedStyle.includes('position: absolute') ||
+        computedStyle.includes('position:absolute') ||
+        computedStyle.includes('position: fixed') ||
+        computedStyle.includes('position:fixed') ||
+        computedStyle.includes('position: relative') ||
+        computedStyle.includes('position:relative') ||
+        computedStyle.includes('position: sticky') ||
+        computedStyle.includes('position:sticky')) {
+      return true;
+    }
+    
+    // Check for visual properties
+    if (computedStyle.includes('background') && 
+        !computedStyle.includes('background: none') &&
+        !computedStyle.includes('background:none') &&
+        !computedStyle.includes('background: transparent') &&
+        !computedStyle.includes('background:transparent')) {
+      return true;
+    }
+    
+    if (computedStyle.includes('border') && 
+        !computedStyle.includes('border: none') &&
+        !computedStyle.includes('border:none') &&
+        !computedStyle.includes('border: 0') &&
+        !computedStyle.includes('border:0')) {
+      return true;
+    }
+    
+    if (computedStyle.includes('box-shadow')) return true;
+    if (computedStyle.includes('text-shadow')) return true;
+    
+    // Check for opacity
+    const opacityMatch = computedStyle.match(/opacity\s*:\s*([\d.]+)/);
+    if (opacityMatch && parseFloat(opacityMatch[1]) < 1) return true;
+    
+    // Check for transform (might be animated)
+    if (computedStyle.includes('transform') && 
+        !computedStyle.includes('transform: none') &&
+        !computedStyle.includes('transform:none')) {
+      return true;
+    }
+    
+    // Check for padding/margin (spacing matters)
+    // Allow unwrapping if only one child - we can transfer spacing
+    if (el.children.length > 1) {
+      if (computedStyle.includes('padding') && 
+          !computedStyle.includes('padding: 0') &&
+          !computedStyle.includes('padding:0')) {
+        return true;
+      }
+      if (computedStyle.includes('margin') && 
+          !computedStyle.includes('margin: 0') &&
+          !computedStyle.includes('margin:0') &&
+          !computedStyle.includes('margin: auto') &&
+          !computedStyle.includes('margin:auto')) {
+        return true;
+      }
+    }
+    
+    // Check for width/height constraints
+    if (computedStyle.includes('width') || 
+        computedStyle.includes('height') ||
+        computedStyle.includes('max-width') ||
+        computedStyle.includes('max-height') ||
+        computedStyle.includes('min-width') ||
+        computedStyle.includes('min-height')) {
+      return true;
+    }
+    
+    // Check for overflow
+    if (computedStyle.includes('overflow') && 
+        !computedStyle.includes('overflow: visible') &&
+        !computedStyle.includes('overflow:visible')) {
+      return true;
+    }
+    
+    // Check for z-index
+    if (computedStyle.includes('z-index')) return true;
+    
+    return false;
+  }
+
+  _canUnwrap(el) {
+    // Must have a parent to unwrap into
+    if (!el.parentNode) return false;
+    
+    // Don't unwrap body or html
+    if (el.tagName === 'BODY' || el.tagName === 'HTML') return false;
+    
+    // Must have at least one child (text or element)
+    if (el.childNodes.length === 0) return false;
+    
+    return true;
+  }
+
+  _unwrapElement(el) {
+    const parent = el.parentNode;
+    
+    // If element has spacing and exactly one child, transfer spacing to child
+    if (el.children.length === 1 && el.hasAttribute('style')) {
+      const style = el.getAttribute('style');
+      const child = el.children[0];
+      
+      // Transfer padding/margin to child
+      const paddingMatch = style.match(/padding[^;]*/gi);
+      const marginMatch = style.match(/margin[^;]*/gi);
+      
+      if (paddingMatch || marginMatch) {
+        const childStyle = child.getAttribute('style') || '';
+        let newStyle = childStyle;
+        
+        if (paddingMatch) {
+          paddingMatch.forEach(p => {
+            if (!childStyle.includes('padding')) {
+              newStyle += '; ' + p;
+            }
+          });
+        }
+        
+        if (marginMatch) {
+          marginMatch.forEach(m => {
+            if (!childStyle.includes('margin')) {
+              newStyle += '; ' + m;
+            }
+          });
+        }
+        
+        if (newStyle !== childStyle) {
+          child.setAttribute('style', newStyle.trim());
+        }
+      }
+    }
+    
+    // Move all children to parent before this element
+    while (el.firstChild) {
+      parent.insertBefore(el.firstChild, el);
+    }
+    
+    // Remove the now-empty wrapper
+    parent.removeChild(el);
+  }
+
+  _cleanFrameworkRoots(clone) {
+    // Force unwrap framework containers if they're just wrappers
+    const frameworkIds = ['root', '__next', '__nuxt', 'app', '__app'];
+    
+    frameworkIds.forEach(id => {
+      const el = clone.querySelector(`#${id}`);
+      if (!el) return;
+      
+      // Only unwrap if it's a div/span with no visual styles
+      if ((el.tagName === 'DIV' || el.tagName === 'SPAN') && 
+          !this._hasVisualStyles(el) && 
+          this._canUnwrap(el)) {
+        console.log(`[DEVTOOL] Stage 3: Removing framework root #${id}`);
+        this._unwrapElement(el);
+      }
+    });
+  }
+}
+
+class HTMLBeautifier {
+  constructor(config = {}) {
+    this.tab = config.indent || '  ';
+  }
+
+  beautify(root) {
+    return '<!DOCTYPE html>\n' + this._serialize(root, 0);
+  }
+
+  _serialize(node, depth) {
+    if (node.nodeType === 3) return this.tab.repeat(depth) + node.textContent.trim() + '\n';
+    if (node.nodeType === 8) return this.tab.repeat(depth) + '<!--' + node.textContent + '-->\n';
+    if (node.nodeType !== 1) return '';
+    const tag = node.tagName.toLowerCase();
+    const pad = this.tab.repeat(depth);
+    let attrs = Array.from(node.attributes).map(a => ` ${a.name}="${a.value}"`).join('');
+    let res = `${pad}<${tag}${attrs}>`;
+    if (VOID_ELEMENTS.has(tag)) return res + '\n';
+    res += '\n';
+    node.childNodes.forEach(child => { res += this._serialize(child, depth + 1); });
+    return res + `${pad}</${tag}>\n`;
+  }
+}
+
 export const useAppSaveAllResource = () => {
   const { state, dispatch } = useStore();
   const { networkResource, staticResource } = state;
@@ -396,7 +777,31 @@ export const useAppSaveAllResource = () => {
             });
 
             if (capturedDOM) {
-              let finalHTML = capturedDOM;
+              // ──────────────────────────────────────────────
+              // DOM UNBUILDER PIPELINE: Asset Ripper + Structural Unwrapping + HTML Beautifier
+              // ──────────────────────────────────────────────
+              dispatch(uiActions.setStatus('Running DOM Unbuilder Pipeline...'));
+              
+              // Parse the captured DOM string back into a document
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(capturedDOM, 'text/html');
+              const clone = doc.documentElement;
+
+              // Stage 1: Asset Ripper - Extract SVGs and Base64 images
+              console.log('[DEVTOOL] Stage 1: Asset Ripper - Extracting inline assets...');
+              const ripper = new AssetRipper();
+              const assetManifest = ripper.run(clone);
+              console.log('[DEVTOOL] Asset Ripper Complete:', assetManifest.stats);
+
+              // Stage 3: Structural Unwrapping - Melt meaningless div-ception
+              console.log('[DEVTOOL] Stage 3: Structural Unwrapping - Melting div-ception...');
+              const unwrappedCount = ripper.unwrapMeaninglessDivs(clone);
+              console.log(`[DEVTOOL] Structural Unwrapping Complete: ${unwrappedCount} wrappers removed`);
+
+              // Stage 5: HTML Beautifier - Generate clean, formatted HTML
+              console.log('[DEVTOOL] Stage 5: HTML Beautifier - Formatting output...');
+              const beautifier = new HTMLBeautifier();
+              let finalHTML = beautifier.beautify(clone);
 
               // Ensure DOCTYPE is present
               if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
@@ -407,8 +812,10 @@ export const useAppSaveAllResource = () => {
               if (isV3Mode) {
                 console.log('[DEVTOOL] V3.0 Mode: Phantom Engine injected - React killed, GSAP CDN loaded, animations resurrected');
               }
-              // This overrides the empty "Network Shell" with the actual rendered HTML
+              
+              // Store the asset manifest for ZIP creation
               mainResource.content = finalHTML;
+              mainResource._assetManifest = assetManifest;
             }
           } catch (err) {
             console.log('[DEVTOOL] Error during DOM snapshot:', err);

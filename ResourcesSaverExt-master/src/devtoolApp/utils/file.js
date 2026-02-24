@@ -131,11 +131,50 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
   // ── Smart Patcher: build resource map once ──
   const resourceMap = buildResourceMap(toDownload);
 
+  // ── DOM Unbuilder: Extract asset manifests and inject assets into download list ──
+  const assetsToAdd = [];
+  toDownload.forEach(item => {
+    if (item._assetManifest) {
+      const manifest = item._assetManifest;
+      
+      // Add extracted SVGs
+      manifest.svgs.forEach(svg => {
+        assetsToAdd.push({
+          url: svg.filename,
+          content: svg.content,
+          saveAs: {
+            name: svg.filename.split('/').pop(),
+            path: svg.filename
+          }
+        });
+      });
+
+      // Add extracted images (decode base64 data URIs)
+      manifest.images.forEach(img => {
+        assetsToAdd.push({
+          url: img.filename,
+          content: img.dataURI,
+          encoding: 'base64',
+          saveAs: {
+            name: img.filename.split('/').pop(),
+            path: img.filename
+          }
+        });
+      });
+
+      console.log(`[DEVTOOL] DOM Unbuilder: Added ${manifest.svgs.length} SVGs and ${manifest.images.length} images to ZIP`);
+      delete item._assetManifest; // Clean up
+    }
+  });
+
+  // Merge assets into the download list
+  const finalDownloadList = [...toDownload, ...assetsToAdd];
+
   const blobWrite = new zip.BlobWriter('application/zip');
   const zipWriter = new zip.ZipWriter(blobWrite);
   addItemsToZipWriter(
     zipWriter,
-    toDownload,
+    finalDownloadList,
     options,
     resourceMap,
     eachDoneCallback,
