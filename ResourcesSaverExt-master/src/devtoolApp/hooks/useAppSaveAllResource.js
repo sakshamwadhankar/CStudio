@@ -18,18 +18,6 @@ const SUB_RESOURCE_SETTLE_MS = 1500;
 // ──────────────────────────────────────────────
 
 const VOID_ELEMENTS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
-const INLINE_ELEMENTS = new Set(['a','abbr','b','bdo','br','cite','code','dfn','em','i','img','input','kbd','label','mark','q','s','samp','small','span','strong','sub','sup','time','u','var','wbr']);
-const WHITESPACE_PRESERVE = new Set(['pre','code','textarea','script','style']);
-const _GROUPS = [
-  ['display','position','top','right','bottom','left','z-index','float','clear','isolation'],
-  ['box-sizing','width','height','min-width','min-height','max-width','max-height','margin-top','margin-right','margin-bottom','margin-left','padding-top','padding-right','padding-bottom','padding-left'],
-  ['flex-direction','flex-wrap','flex-grow','flex-shrink','flex-basis','justify-content','align-items','align-content','align-self','order','gap','row-gap','column-gap','grid-template-columns','grid-template-rows','grid-auto-flow','grid-auto-columns','grid-auto-rows','grid-column','grid-row'],
-  ['font-family','font-size','font-weight','font-style','line-height','letter-spacing','word-spacing','text-align','text-decoration','text-transform','color','white-space','word-break','overflow-wrap','text-overflow','vertical-align'],
-  ['background-color','background-image','background-size','background-position','background-repeat','background-clip','border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-style','border-right-style','border-bottom-style','border-left-style','border-top-color','border-right-color','border-bottom-color','border-left-color','border-top-left-radius','border-top-right-radius','border-bottom-right-radius','border-bottom-left-radius','box-shadow','text-shadow','outline','outline-offset','opacity','visibility'],
-  ['transform','transform-origin','filter','backdrop-filter','mix-blend-mode','clip-path','overflow','overflow-x','overflow-y','cursor','pointer-events','user-select','object-fit','object-position','aspect-ratio','list-style-type','list-style-position','scroll-snap-type','scroll-snap-align']
-];
-const PROP_ORDER = {};
-_GROUPS.forEach((group, gi) => { group.forEach((prop, pi) => { PROP_ORDER[prop] = gi * 100 + pi; }); });
 
 class AssetRipper {
   constructor(config = {}) {
@@ -806,6 +794,154 @@ export const useAppSaveAllResource = () => {
               // Ensure DOCTYPE is present
               if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
                 finalHTML = '<!DOCTYPE html>\n' + finalHTML;
+              }
+
+              // ──────────────────────────────────────────────
+              // KILL LAYER: Environment Poisoning (Framework Paralysis)
+              // ──────────────────────────────────────────────
+              // Inject the poison script at the very beginning of <head>
+              // This MUST execute before any other JavaScript to prevent framework hydration
+              console.log('[DEVTOOL] Injecting Kill Layer - Framework Paralysis Active');
+              
+              const killLayerScript = `<script>
+(function() {
+  // ═══════════════════════════════════════════════════════════
+  // 🛡️ CStudio Kill-Layer: Framework Paralysis System
+  // ═══════════════════════════════════════════════════════════
+  // This script executes FIRST to prevent React/Next.js/Vue from
+  // wiping out VisBug edits during hydration or local execution.
+  // ═══════════════════════════════════════════════════════════
+
+  // GSAP Animation Whitelist - Allow these properties to pass through
+  const GSAP_PROPS = ['transform', 'opacity', 'visibility', 'translate', 'scale', 'rotate', 'translateX', 'translateY', 'translateZ', 'scaleX', 'scaleY', 'rotateX', 'rotateY', 'rotateZ'];
+
+  // ─────────────────────────────────────────────────────────
+  // Pillar 1: Network Hang (The Infinite Loading Trick)
+  // ─────────────────────────────────────────────────────────
+  // Override fetch and XHR to hang on non-local requests.
+  // This keeps the framework waiting forever instead of crashing.
+  
+  const hang = () => new Promise(() => {});
+  const originalFetch = window.fetch;
+  
+  window.fetch = function(url, options) {
+    // Allow local/relative URLs and data URIs
+    if (typeof url === 'string' && 
+        (url.startsWith('/') || 
+         url.startsWith('./') || 
+         url.startsWith('../') || 
+         url.startsWith('data:') ||
+         url.startsWith('blob:'))) {
+      return originalFetch.apply(this, arguments);
+    }
+    console.log('[Kill-Layer] Network request blocked:', url);
+    return hang();
+  };
+
+  const originalXHROpen = window.XMLHttpRequest.prototype.open;
+  window.XMLHttpRequest.prototype.open = function(method, url) {
+    // Allow local/relative URLs
+    if (typeof url === 'string' && 
+        (url.startsWith('/') || 
+         url.startsWith('./') || 
+         url.startsWith('../') || 
+         url.startsWith('data:') ||
+         url.startsWith('blob:'))) {
+      return originalXHROpen.apply(this, arguments);
+    }
+    console.log('[Kill-Layer] XHR request blocked:', url);
+    // Return but don't actually open - request will never complete
+    return;
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // Pillar 2: Smart Write Lock (With GSAP Whitelist)
+  // ─────────────────────────────────────────────────────────
+  // Monkey-patch setAttribute and style setters to protect
+  // any element that has CStudio-captured styles, BUT allow
+  // GSAP animation properties to pass through.
+  
+  const originalSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    // If this element has inline styles (likely from VisBug), protect class/id
+    if (this.hasAttribute && this.hasAttribute('style')) {
+      // Block attempts to change class or id attributes (but allow style for GSAP)
+      if (name === 'class' || name === 'id') {
+        console.log('[Kill-Layer] Write blocked on protected element:', this.tagName, name);
+        return;
+      }
+    }
+    return originalSetAttribute.apply(this, arguments);
+  };
+
+  const originalSetProperty = CSSStyleDeclaration.prototype.setProperty;
+  CSSStyleDeclaration.prototype.setProperty = function(property, value, priority) {
+    // Allow GSAP animation properties to pass through
+    if (GSAP_PROPS.some(p => property.includes(p))) {
+      return originalSetProperty.apply(this, arguments);
+    }
+    
+    // Check if the element this style belongs to has CStudio edits
+    const element = this.parentElement || this.ownerElement;
+    if (element && element.hasAttribute && element.hasAttribute('style')) {
+      console.log('[Kill-Layer] Style write blocked:', property, 'on', element.tagName);
+      return;
+    }
+    return originalSetProperty.apply(this, arguments);
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // Pillar 3: Scheduler Neuter (React 18+ Commit Blocker)
+  // ─────────────────────────────────────────────────────────
+  // Disable MessageChannel and requestIdleCallback which React
+  // uses to schedule and commit DOM updates.
+  
+  window.MessageChannel = class FakeMessageChannel {
+    constructor() {
+      this.port1 = { onmessage: null, postMessage: () => {} };
+      this.port2 = { onmessage: null, postMessage: () => {} };
+    }
+  };
+
+  const originalRequestIdleCallback = window.requestIdleCallback;
+  window.requestIdleCallback = function(callback, options) {
+    // Delay callback execution to a very distant future
+    console.log('[Kill-Layer] Idle callback neutered');
+    return setTimeout(callback, 1000000);
+  };
+
+  window.cancelIdleCallback = function(id) {
+    clearTimeout(id);
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // Additional Protection: Disable React DevTools Hook
+  // ─────────────────────────────────────────────────────────
+  if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
+    window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+      inject: () => {},
+      onCommitFiberRoot: () => {},
+      onCommitFiberUnmount: () => {},
+      supportsFiber: false
+    };
+  }
+
+  console.log('🛡️ CStudio Kill-Layer Active: Framework Paralyzed (GSAP Whitelisted).');
+  console.log('   ✓ Network requests frozen');
+  console.log('   ✓ DOM write operations locked (GSAP animations allowed)');
+  console.log('   ✓ React scheduler neutered');
+})();
+</script>`;
+
+              // Inject the Kill Layer script right after <head> tag
+              const headTagMatch = finalHTML.match(/(<head[^>]*>)/i);
+              if (headTagMatch) {
+                const headTag = headTagMatch[1];
+                const headIndex = finalHTML.indexOf(headTag) + headTag.length;
+                finalHTML = finalHTML.slice(0, headIndex) + '\n' + killLayerScript + finalHTML.slice(headIndex);
+                console.log('[DEVTOOL] Kill Layer injected successfully at position:', headIndex);
+              } else {
+                console.warn('[DEVTOOL] Could not find <head> tag to inject Kill Layer');
               }
 
               console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
