@@ -160,16 +160,20 @@ export const useAppSaveAllResource = () => {
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
 
-                    // NUKE EVERY SCRIPT & PRELOAD TRACE
+                    // ABSOLUTE SCRIPT NUKE (Zero Tolerance Policy)
                     clone.querySelectorAll('script').forEach(script => {
                       if (script.src && script.src.includes('visbug')) return;
                       if (script.innerHTML && script.innerHTML.includes('CStudio')) return;
                       script.remove();
                       auditLog.reactScriptsNuked++;
                     });
+                    
+                    // Kill module preloads and eagerly loaded assets
                     clone.querySelectorAll('link[rel="modulepreload"], link[as="script"], link[rel="prefetch"], link[rel="preload"]').forEach(el => {
-                      if(el.href && el.href.includes('.js')) el.remove();
+                      if(el.href && (el.href.includes('.js') || el.href.includes('.mjs'))) el.remove();
                     });
+                    
+                    // Kill inline state variables
                     clone.querySelectorAll('#__NEXT_DATA__, #__nuxt, [id^="__next"]').forEach(el => {
                       if(el.tagName === 'SCRIPT' || el.tagName === 'TEMPLATE') { 
                         el.remove(); 
