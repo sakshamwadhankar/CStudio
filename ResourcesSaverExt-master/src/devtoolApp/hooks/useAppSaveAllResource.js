@@ -96,7 +96,6 @@ export const useAppSaveAllResource = () => {
               // 4. Inject our own GSAP Phantom Engine from CDN
               const captureScript = `
                 (function() {
-                  // === INITIALIZE DIAGNOSTIC LOGGER ===
                   const auditLog = {
                     status: "SUCCESS",
                     visBugEditsSaved: 0,
@@ -130,23 +129,65 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // Track Visbug Edits
+                    // 2. CAPTURE VISBUG EDITS (THE BULLETPROOF WAY - NEVER DROP THIS!)
                     document.querySelectorAll('*').forEach(el => {
-                      if (el.hasAttribute('style')) auditLog.visBugEditsSaved++;
+                      if (el.hasAttribute('style') || (el.style && el.style.length > 0)) {
+                        el.setAttribute('data-cstudio-visbug-style', el.style.cssText || el.getAttribute('style'));
+                        auditLog.visBugEditsSaved++;
+                      }
                     });
 
-                    // 2. CLONE DOM 
+                    // 3. CLONE DOM 
                     const clone = document.documentElement.cloneNode(true);
 
-                    // 3. Clean Live DOM
-                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader]').forEach(el => {
+                    // 4. Clean Live DOM (So user sees no trace)
+                    document.querySelectorAll('[data-cstudio-hidden], [data-cstudio-preloader], [data-cstudio-visbug-style]').forEach(el => {
                       el.removeAttribute('data-cstudio-hidden');
                       el.removeAttribute('data-cstudio-preloader');
+                      el.removeAttribute('data-cstudio-visbug-style');
                     });
 
-                    // 4. SANITIZE CLONE
+                    // 5. RESTORE VISBUG EDITS ON CLONE
+                    clone.querySelectorAll('[data-cstudio-visbug-style]').forEach(el => {
+                      const savedStyle = el.getAttribute('data-cstudio-visbug-style');
+                      if (savedStyle) {
+                        el.setAttribute('style', savedStyle);
+                      }
+                      el.removeAttribute('data-cstudio-visbug-style');
+                    });
+
+                    // 6. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
+
+                    // NUKE EVERY SCRIPT & PRELOAD TRACE
+                    clone.querySelectorAll('script').forEach(script => {
+                      if (script.src && script.src.includes('visbug')) return;
+                      if (script.innerHTML && script.innerHTML.includes('CStudio')) return;
+                      script.remove();
+                      auditLog.reactScriptsNuked++;
+                    });
+                    clone.querySelectorAll('link[rel="modulepreload"], link[as="script"], link[rel="prefetch"], link[rel="preload"]').forEach(el => {
+                      if(el.href && el.href.includes('.js')) el.remove();
+                    });
+                    clone.querySelectorAll('#__NEXT_DATA__, #__nuxt, [id^="__next"]').forEach(el => {
+                      if(el.tagName === 'SCRIPT' || el.tagName === 'TEMPLATE') { 
+                        el.remove(); 
+                        auditLog.reactScriptsNuked++; 
+                      }
+                    });
+
+                    // STRIP INLINE EVENT HANDLERS (Kills "Ghost" JS execution like onload=)
+                    clone.querySelectorAll('*').forEach(el => {
+                      if (el.attributes) {
+                        for (let i = el.attributes.length - 1; i >= 0; i--) {
+                          const attrName = el.attributes[i].name.toLowerCase();
+                          if (attrName.startsWith('on')) {
+                            el.removeAttribute(attrName);
+                          }
+                        }
+                      }
+                    });
 
                     // FIXED: SMART URL ABSOLUTIZATION (Never break existing external links!)
                     clone.querySelectorAll('img, source, video, audio, track, embed, iframe').forEach(el => {
@@ -257,7 +298,7 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 6. INJECT PHANTOM ENGINE
+                    // 7. INJECT PHANTOM ENGINE & DIAGNOSTIC REPORT
                     if (body) {
                       const engineScript = document.createElement('script');
                       engineScript.innerHTML = \`
@@ -302,7 +343,7 @@ export const useAppSaveAllResource = () => {
                           console.log("%c💡 Troubleshooting Guide:", "color: #FFD700; font-weight: bold;");
                           console.log("- Animations Missing? Check if GSAP CDN is blocked by AdBlock or CSP.");
                           console.log("- Edits Missing? Check 'visBugEditsSaved'. If 0, Visbug was not active.");
-                          console.log("- Images Blank? Check network tab for CORS/404 errors.");
+                          console.log("- Vue/React Errors in Console? Try testing in an Incognito Window to avoid cached Service Workers.");
                           console.groupEnd();
                         }, 2000);
                       \`;
