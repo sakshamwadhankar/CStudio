@@ -174,6 +174,10 @@ class AssetRipper {
     if (el.hasAttribute('id')) return true;
     if (el.hasAttribute('role')) return true;
     
+    // CRITICAL HOTFIX: Protect elements that rely on CSS classes for layout
+    // Without Stage 0 (Class Fossilization), we must preserve ALL class-based styling
+    if (el.hasAttribute('class') && el.getAttribute('class').trim() !== '') return true;
+    
     for (let attr of el.attributes) {
       if (attr.name.startsWith('aria-')) return true;
       if (attr.name.startsWith('data-cstudio-')) return true; // Preserve our markers
@@ -528,6 +532,11 @@ export const useAppSaveAllResource = () => {
                     // 6. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
+
+                    // CRITICAL HOTFIX: Protect Google Fonts from being downloaded as broken local resources
+                    clone.querySelectorAll('link[href*="fonts.googleapis"]').forEach(el => {
+                      el.setAttribute('data-server-no-download', 'true');
+                    });
 
                     // ABSOLUTE SCRIPT NUKE (Zero Tolerance Policy)
                     clone.querySelectorAll('script').forEach(script => {
