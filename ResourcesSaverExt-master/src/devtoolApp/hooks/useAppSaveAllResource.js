@@ -96,6 +96,18 @@ export const useAppSaveAllResource = () => {
               // 4. Inject our own GSAP Phantom Engine from CDN
               const captureScript = `
                 (function() {
+                  // === INITIALIZE DIAGNOSTIC LOGGER ===
+                  const auditLog = {
+                    status: "SUCCESS",
+                    visBugEditsSaved: 0,
+                    preloadersDestroyed: 0,
+                    hiddenElementsRevealed: 0,
+                    mediaUrlsFixed: 0,
+                    blurPlaceholdersRemoved: 0,
+                    reactScriptsNuked: 0,
+                    errors: []
+                  };
+
                   try {
                     const liveBase = window.location.origin;
 
@@ -103,7 +115,10 @@ export const useAppSaveAllResource = () => {
                     document.querySelectorAll('.opacity-0, [style*="opacity: 0"], [style*="visibility: hidden"], video').forEach(el => {
                       if (!el.closest('[role="dialog"], [role="menu"], .modal, .dropdown')) {
                         const comp = window.getComputedStyle(el);
-                        if (comp && comp.display !== 'none') el.setAttribute('data-cstudio-hidden', 'true');
+                        if (comp && comp.display !== 'none') {
+                          el.setAttribute('data-cstudio-hidden', 'true');
+                          auditLog.hiddenElementsRevealed++;
+                        }
                       }
                     });
 
@@ -111,7 +126,13 @@ export const useAppSaveAllResource = () => {
                       const style = window.getComputedStyle(el);
                       if (style && style.position === 'fixed' && parseInt(style.zIndex) > 40 && (style.height === '100vh' || style.height === '100%' || style.bottom === '0px' || style.bottom === '0' || style.backgroundColor === 'rgb(0, 0, 0)')) {
                         el.setAttribute('data-cstudio-preloader', 'true');
+                        auditLog.preloadersDestroyed++;
                       }
+                    });
+
+                    // Track Visbug Edits
+                    document.querySelectorAll('*').forEach(el => {
+                      if (el.hasAttribute('style')) auditLog.visBugEditsSaved++;
                     });
 
                     // 2. CLONE DOM 
@@ -137,7 +158,10 @@ export const useAppSaveAllResource = () => {
                               const absUrl = new URL(originalUrl, liveBase).href;
                               el.setAttribute('data-original-src', absUrl);
                               el.setAttribute(attr, absUrl);
-                            } catch(e) {}
+                              auditLog.mediaUrlsFixed++;
+                            } catch(e) { 
+                              auditLog.errors.push("URL Fix Failed: " + originalUrl); 
+                            }
                           }
                         }
                       });
@@ -149,6 +173,7 @@ export const useAppSaveAllResource = () => {
                             if (trimmed.startsWith('data:') || trimmed.startsWith('http') || trimmed.startsWith('//')) return part;
                             const spaceIdx = trimmed.search(/\\s+/);
                             try {
+                              auditLog.mediaUrlsFixed++;
                               if (spaceIdx === -1) return new URL(trimmed, liveBase).href;
                               return new URL(trimmed.substring(0, spaceIdx), liveBase).href + trimmed.substring(spaceIdx);
                             } catch(e) { return part; }
@@ -160,22 +185,33 @@ export const useAppSaveAllResource = () => {
 
                     // THE BLUR KILLER 
                     clone.querySelectorAll('*').forEach(el => {
+                      let blurFixed = false;
                       if (el.style) {
-                        if (el.style.filter && el.style.filter.includes('blur')) el.style.removeProperty('filter');
-                        if (el.style.backdropFilter && el.style.backdropFilter.includes('blur')) el.style.removeProperty('backdrop-filter');
+                        if (el.style.filter && el.style.filter.includes('blur')) { 
+                          el.style.removeProperty('filter'); 
+                          blurFixed = true; 
+                        }
+                        if (el.style.backdropFilter && el.style.backdropFilter.includes('blur')) { 
+                          el.style.removeProperty('backdrop-filter'); 
+                          blurFixed = true; 
+                        }
                         if (el.tagName === 'IMG') {
                           el.style.removeProperty('color');
                           if (el.style.backgroundImage && el.style.backgroundImage.includes('data:image')) {
                             el.style.removeProperty('background-image');
                             el.style.removeProperty('background-size');
+                            blurFixed = true;
                           }
                           el.removeAttribute('loading');
                           el.removeAttribute('decoding');
                         }
                       }
                       if (el.className && typeof el.className === 'string') {
+                        const orig = el.className;
                         el.className = el.className.replace(/\\b(blur-[a-z0-9]+|backdrop-blur-[a-z0-9]+|blur)\\b/g, '').trim();
+                        if (orig !== el.className) blurFixed = true;
                       }
+                      if (blurFixed) auditLog.blurPlaceholdersRemoved++;
                     });
 
                     // A. PRE-REVEAL ELEMENTS
@@ -211,10 +247,14 @@ export const useAppSaveAllResource = () => {
                       if (script.src && script.src.includes('visbug')) return;
                       if (script.innerHTML && script.innerHTML.includes('CStudio')) return;
                       script.remove();
+                      auditLog.reactScriptsNuked++;
                     });
                     clone.querySelectorAll('link[rel="modulepreload"], link[as="script"]').forEach(el => el.remove());
                     clone.querySelectorAll('#__NEXT_DATA__, #__nuxt, [id^="__next"]').forEach(el => {
-                      if(el.tagName === 'SCRIPT') el.remove();
+                      if(el.tagName === 'SCRIPT') { 
+                        el.remove(); 
+                        auditLog.reactScriptsNuked++; 
+                      }
                     });
 
                     // 6. INJECT PHANTOM ENGINE
@@ -254,14 +294,25 @@ export const useAppSaveAllResource = () => {
                             setTimeout(() => ScrollTrigger.refresh(), 500);
                           } else if (chk > 50) clearInterval(intGSAP);
                         }, 100);
+
+                        // === THE DIAGNOSTIC DASHBOARD ===
+                        setTimeout(() => {
+                          console.groupCollapsed('%c🚀 CStudio Diagnostic Report (Click to Expand)', 'color: #00FF00; background: #000; padding: 5px 10px; border-radius: 4px; font-weight: bold;');
+                          console.table(\` + JSON.stringify(auditLog) + \`);
+                          console.log("%c💡 Troubleshooting Guide:", "color: #FFD700; font-weight: bold;");
+                          console.log("- Animations Missing? Check if GSAP CDN is blocked by AdBlock or CSP.");
+                          console.log("- Edits Missing? Check 'visBugEditsSaved'. If 0, Visbug was not active.");
+                          console.log("- Images Blank? Check network tab for CORS/404 errors.");
+                          console.groupEnd();
+                        }, 2000);
                       \`;
                       body.appendChild(engineScript);
                     }
 
-                    return clone.outerHTML;
+                    // Return HTML with hidden Audit Log comment at the very top
+                    return "<!--\\nCSTUDIO DIAGNOSTIC LOG:\\n" + JSON.stringify(auditLog, null, 2) + "\\n-->\\n" + clone.outerHTML;
                   } catch (err) {
-                    console.error('[CStudio] Capture crash:', err);
-                    return document.documentElement.outerHTML;
+                    return "<!--\\nCSTUDIO CAPTURE ERROR: " + err.message + "\\n-->\\n" + document.documentElement.outerHTML;
                   }
                 })();
               `;
