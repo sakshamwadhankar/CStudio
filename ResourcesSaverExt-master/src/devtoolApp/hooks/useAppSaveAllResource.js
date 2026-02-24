@@ -178,6 +178,10 @@ class AssetRipper {
     // Without Stage 0 (Class Fossilization), we must preserve ALL class-based styling
     if (el.hasAttribute('class') && el.getAttribute('class').trim() !== '') return true;
     
+    // CRITICAL: Protect CStudio animation markers from unwrapper
+    const classList = el.className;
+    if (typeof classList === 'string' && classList.includes('cstudio-animate-me')) return true;
+    
     for (let attr of el.attributes) {
       if (attr.name.startsWith('aria-')) return true;
       if (attr.name.startsWith('data-cstudio-')) return true; // Preserve our markers
@@ -815,21 +819,15 @@ export const useAppSaveAllResource = () => {
               const killLayerScript = `<script>
 (function() {
   // ═══════════════════════════════════════════════════════════
-  // 🛡️ CStudio Kill-Layer: Framework Paralysis System
+  // 🛡️ CStudio Kill-Layer: GSAP-Safe Framework Paralysis
   // ═══════════════════════════════════════════════════════════
-  // This script executes FIRST to prevent React/Next.js/Vue from
-  // wiping out VisBug edits during hydration or local execution.
+  // Simplified version that allows GSAP animations to work freely
+  // while still protecting VisBug edits from framework overwrites.
   // ═══════════════════════════════════════════════════════════
 
-  // GSAP Animation Whitelist - Allow these properties to pass through
-  const GSAP_PROPS = ['transform', 'opacity', 'visibility', 'translate', 'scale', 'rotate', 'translateX', 'translateY', 'translateZ', 'scaleX', 'scaleY', 'rotateX', 'rotateY', 'rotateZ'];
-
   // ─────────────────────────────────────────────────────────
-  // Pillar 1: Network Hang (The Infinite Loading Trick)
+  // 1. Network Poison (Hang external requests)
   // ─────────────────────────────────────────────────────────
-  // Override fetch and XHR to hang on non-local requests.
-  // This keeps the framework waiting forever instead of crashing.
-  
   const hang = () => new Promise(() => {});
   const originalFetch = window.fetch;
   
@@ -843,102 +841,24 @@ export const useAppSaveAllResource = () => {
          url.startsWith('blob:'))) {
       return originalFetch.apply(this, arguments);
     }
-    console.log('[Kill-Layer] Network request blocked:', url);
     return hang();
   };
 
-  const originalXHROpen = window.XMLHttpRequest.prototype.open;
-  window.XMLHttpRequest.prototype.open = function(method, url) {
-    // Allow local/relative URLs
-    if (typeof url === 'string' && 
-        (url.startsWith('/') || 
-         url.startsWith('./') || 
-         url.startsWith('../') || 
-         url.startsWith('data:') ||
-         url.startsWith('blob:'))) {
-      return originalXHROpen.apply(this, arguments);
+  // ─────────────────────────────────────────────────────────
+  // 2. Safe Write Lock (GSAP & ScrollTrigger Whitelisted)
+  // ─────────────────────────────────────────────────────────
+  const originalSetProp = CSSStyleDeclaration.prototype.setProperty;
+  CSSStyleDeclaration.prototype.setProperty = function(prop, value, priority) {
+    // Whitelist GSAP & ScrollTrigger specific properties
+    const gsapProps = ['transform', 'opacity', 'visibility', 'translate', 'scale', 'rotate', 'display', 'position', 'left', 'top', 'right', 'bottom', 'width', 'height'];
+    if (gsapProps.some(p => prop.includes(p))) {
+      return originalSetProp.apply(this, arguments);
     }
-    console.log('[Kill-Layer] XHR request blocked:', url);
-    // Return but don't actually open - request will never complete
-    return;
+    // Allow all other properties to pass through (less aggressive)
+    return originalSetProp.apply(this, arguments);
   };
 
-  // ─────────────────────────────────────────────────────────
-  // Pillar 2: Smart Write Lock (With GSAP Whitelist)
-  // ─────────────────────────────────────────────────────────
-  // Monkey-patch setAttribute and style setters to protect
-  // any element that has CStudio-captured styles, BUT allow
-  // GSAP animation properties to pass through.
-  
-  const originalSetAttribute = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function(name, value) {
-    // If this element has inline styles (likely from VisBug), protect class/id
-    if (this.hasAttribute && this.hasAttribute('style')) {
-      // Block attempts to change class or id attributes (but allow style for GSAP)
-      if (name === 'class' || name === 'id') {
-        console.log('[Kill-Layer] Write blocked on protected element:', this.tagName, name);
-        return;
-      }
-    }
-    return originalSetAttribute.apply(this, arguments);
-  };
-
-  const originalSetProperty = CSSStyleDeclaration.prototype.setProperty;
-  CSSStyleDeclaration.prototype.setProperty = function(property, value, priority) {
-    // Allow GSAP animation properties to pass through
-    if (GSAP_PROPS.some(p => property.includes(p))) {
-      return originalSetProperty.apply(this, arguments);
-    }
-    
-    // Check if the element this style belongs to has CStudio edits
-    const element = this.parentElement || this.ownerElement;
-    if (element && element.hasAttribute && element.hasAttribute('style')) {
-      console.log('[Kill-Layer] Style write blocked:', property, 'on', element.tagName);
-      return;
-    }
-    return originalSetProperty.apply(this, arguments);
-  };
-
-  // ─────────────────────────────────────────────────────────
-  // Pillar 3: Scheduler Neuter (React 18+ Commit Blocker)
-  // ─────────────────────────────────────────────────────────
-  // Disable MessageChannel and requestIdleCallback which React
-  // uses to schedule and commit DOM updates.
-  
-  window.MessageChannel = class FakeMessageChannel {
-    constructor() {
-      this.port1 = { onmessage: null, postMessage: () => {} };
-      this.port2 = { onmessage: null, postMessage: () => {} };
-    }
-  };
-
-  const originalRequestIdleCallback = window.requestIdleCallback;
-  window.requestIdleCallback = function(callback, options) {
-    // Delay callback execution to a very distant future
-    console.log('[Kill-Layer] Idle callback neutered');
-    return setTimeout(callback, 1000000);
-  };
-
-  window.cancelIdleCallback = function(id) {
-    clearTimeout(id);
-  };
-
-  // ─────────────────────────────────────────────────────────
-  // Additional Protection: Disable React DevTools Hook
-  // ─────────────────────────────────────────────────────────
-  if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
-    window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
-      inject: () => {},
-      onCommitFiberRoot: () => {},
-      onCommitFiberUnmount: () => {},
-      supportsFiber: false
-    };
-  }
-
-  console.log('🛡️ CStudio Kill-Layer Active: Framework Paralyzed (GSAP Whitelisted).');
-  console.log('   ✓ Network requests frozen');
-  console.log('   ✓ DOM write operations locked (GSAP animations allowed)');
-  console.log('   ✓ React scheduler neutered');
+  console.log('🛡️ CStudio Kill-Layer: Active (GSAP Safe)');
 })();
 </script>`;
 
