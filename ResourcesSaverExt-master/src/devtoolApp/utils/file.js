@@ -131,75 +131,78 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
   // ── Smart Patcher: build resource map once ──
   const resourceMap = buildResourceMap(toDownload);
 
-  // ── DOM Unbuilder: Extract asset manifests and inject assets into download list ──
-  const assetsToAdd = [];
+  // ── DOM Unbuilder: Find main resource with asset manifest ──
+  let mainResource = null;
   toDownload.forEach(item => {
     if (item._assetManifest) {
-      const manifest = item._assetManifest;
-      
-      // Add extracted SVGs
-      manifest.svgs.forEach(svg => {
-        assetsToAdd.push({
-          url: svg.filename,
-          content: svg.content,
-          saveAs: {
-            name: svg.filename.split('/').pop(),
-            path: svg.filename
-          }
-        });
-      });
-
-      // Add extracted images (decode base64 data URIs)
-      manifest.images.forEach(img => {
-        // Extract pure base64 from data URI
-        const dataURI = img.dataURI || '';
-        let base64Content = dataURI;
-        
-        // If it's a data URI, extract just the base64 part
-        if (dataURI.includes('base64,')) {
-          base64Content = dataURI.split('base64,')[1];
-        }
-        
-        assetsToAdd.push({
-          url: img.filename,
-          content: base64Content,
-          encoding: 'base64',
-          saveAs: {
-            name: img.filename.split('/').pop(),
-            path: img.filename
-          }
-        });
-      });
-
-      console.log(`[DEVTOOL] DOM Unbuilder: Added ${manifest.svgs.length} SVGs and ${manifest.images.length} images to ZIP`);
-      // Don't delete manifest yet - keep it for debugging
-      // delete item._assetManifest;
+      mainResource = item;
     }
   });
 
-  // Merge assets into the download list
-  const finalDownloadList = [...toDownload, ...assetsToAdd];
-
-  console.log(`[DEVTOOL] Final download list contains ${finalDownloadList.length} items (${assetsToAdd.length} are extracted assets)`);
-
   const blobWrite = new zip.BlobWriter('application/zip');
   const zipWriter = new zip.ZipWriter(blobWrite);
-  addItemsToZipWriter(
-    zipWriter,
-    finalDownloadList,
-    options,
-    resourceMap,
-    eachDoneCallback,
-    downloadCompleteZip.bind(this, zipWriter, blobWrite, callback)
-  );
+  
+  // ── EXTRACT CSTUDIO ASSET MANIFEST (Native JSZip Base64 Handling) ──
+  const assetPromises = [];
+  if (mainResource && mainResource._assetManifest) {
+    const manifest = mainResource._assetManifest;
+    
+    // Add SVGs directly
+    if (manifest.svgs && manifest.svgs.length > 0) {
+      manifest.svgs.forEach(svg => {
+        assetPromises.push(
+          zipWriter.add(svg.filename, new zip.TextReader(svg.content))
+        );
+      });
+      console.log(`[DEVTOOL] Added ${manifest.svgs.length} SVGs to ZIP`);
+    }
+    
+    // Add images with native base64 handling
+    if (manifest.images && manifest.images.length > 0) {
+      manifest.images.forEach(img => {
+        const commaIdx = img.dataURI.indexOf(',');
+        if (commaIdx !== -1) {
+          // Extract base64 payload and clean whitespace
+          const payload = img.dataURI.substring(commaIdx + 1).replace(/[\s\r\n]/g, '');
+          // Let JSZip handle base64 decoding natively
+          assetPromises.push(
+            zipWriter.add(img.filename, new zip.TextReader(payload), { base64: true })
+          );
+        }
+      });
+      console.log(`[DEVTOOL] Added ${manifest.images.length} images to ZIP`);
+    }
+    
+    // Clean up manifest
+    delete mainResource._assetManifest;
+  }
+
+  // Wait for all assets to be added, then add regular resources
+  Promise.all(assetPromises).then(() => {
+    addItemsToZipWriter(
+      zipWriter,
+      toDownload,
+      options,
+      resourceMap,
+      eachDoneCallback,
+      downloadCompleteZip.bind(this, zipWriter, blobWrite, callback)
+    );
+  }).catch(err => {
+    console.error('[DEVTOOL] Error adding assets to ZIP:', err);
+    // Continue anyway with regular resources
+    addItemsToZipWriter(
+      zipWriter,
+      toDownload,
+      options,
+      resourceMap,
+      eachDoneCallback,
+      downloadCompleteZip.bind(this, zipWriter, blobWrite, callback)
+    );
+  });
 };
 
 // Create a reader of the content for zip
 export const getContentRead = (item) => {
-  // If content is Uint8Array (decoded base64), use Uint8ArrayReader
-  if (item.content instanceof Uint8Array) {
-    return new zip.Uint8ArrayReader(item.content);
-  }
   if (item.content instanceof Blob) {
     return new zip.BlobReader(item.content);
   }
@@ -263,24 +266,19 @@ export const addItemsToZipWriter = (zipWriter, items, options, resourceMap, each
       }
     }
 
-    // Check whether base64 encoding is valid
+    // Check whether base64 encoding is valid (not used for assets anymore)
     if (item.encoding === 'base64') {
-      // For base64 content, we need to decode it to binary
-      // The content should already be pure base64 (without data URI prefix)
+      // Legacy base64 handling for non-asset resources
       try {
-        // Validate that it's valid base64
-        const binaryString = atob(item.content);
-        // Convert to Uint8Array for zip
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        // Replace content with Uint8Array
-        item.content = bytes;
-        item.encoding = null; // Clear encoding flag since we've decoded it
+        atob(item.content);
       } catch (err) {
-        console.log('[DEVTOOL]', item.url, ' base64 decode failed:', err);
-        item.encoding = null;
+        console.log('[DEVTOOL]', item.url, ' is not base64 encoding, try to encode to base64.');
+        try {
+          item.content = btoa(item.content);
+        } catch (err) {
+          console.log('[DEVTOOL]', item.url, ' failed to encode to base64, fallback to text.');
+          item.encoding = null;
+        }
       }
     }
 

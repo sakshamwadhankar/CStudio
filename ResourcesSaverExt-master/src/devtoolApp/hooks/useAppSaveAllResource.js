@@ -696,9 +696,35 @@ export const useAppSaveAllResource = () => {
                       }
                     });
 
-                    // 7. INJECT PHANTOM ENGINE & DIAGNOSTIC REPORT
+                    // ──────────────────────────────────────────────
+                    // GHOST LOCK: CSP-Based Framework Paralysis
+                    // ──────────────────────────────────────────────
+                    // Generate a cryptographic nonce for our scripts
+                    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+                    
+                    // Install the Ghost Lock (CSP) at the very top of <head>
+                    const head = clone.querySelector('head');
+                    if (head) {
+                      const csp = clone.ownerDocument.createElement('meta');
+                      csp.setAttribute('http-equiv', 'Content-Security-Policy');
+                      csp.setAttribute('content', 
+                        \`script-src 'nonce-\${nonce}' https://cdnjs.cloudflare.com; \` +
+                        \`style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; \` +
+                        \`img-src * data: blob:; \` +
+                        \`font-src * data:; \` +
+                        \`connect-src 'none'; \` +
+                        \`media-src * data: blob:; \` +
+                        \`frame-src 'none'\`
+                      );
+                      head.insertBefore(csp, head.firstChild);
+                      console.log('[DEVTOOL] Ghost Lock (CSP) installed with nonce:', nonce);
+                    }
+
+                    // 7. INJECT PHANTOM ENGINE & DIAGNOSTIC REPORT (with nonce)
                     if (body) {
                       const engineScript = document.createElement('script');
+                      engineScript.setAttribute('nonce', nonce);
+                      engineScript.setAttribute('class', 'cstudio-phantom-script');
                       engineScript.innerHTML = \`
                         window.addEventListener('error', function(e) {
                           if (e.target && (e.target.tagName === 'IMG' || e.target.tagName === 'SOURCE' || e.target.tagName === 'VIDEO')) {
@@ -710,8 +736,15 @@ export const useAppSaveAllResource = () => {
                           }
                         }, true);
 
-                        const s1 = document.createElement('script'); s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js'; document.body.appendChild(s1);
-                        const s2 = document.createElement('script'); s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js'; document.body.appendChild(s2);
+                        const s1 = document.createElement('script'); 
+                        s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js'; 
+                        s1.setAttribute('nonce', '\${nonce}');
+                        document.body.appendChild(s1);
+                        
+                        const s2 = document.createElement('script'); 
+                        s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js'; 
+                        s2.setAttribute('nonce', '\${nonce}');
+                        document.body.appendChild(s2);
                         
                         let chk = 0;
                         const intGSAP = setInterval(() => {
@@ -742,6 +775,7 @@ export const useAppSaveAllResource = () => {
                           console.log("- Animations Missing? Check if GSAP CDN is blocked by AdBlock or CSP.");
                           console.log("- Edits Missing? Check 'visBugEditsSaved'. If 0, Visbug was not active.");
                           console.log("- Vue/React Errors in Console? Try testing in an Incognito Window to avoid cached Service Workers.");
+                          console.log("- CSP Active: Only scripts with nonce='\${nonce}' can execute.");
                           console.groupEnd();
                         }, 2000);
                       \`;
@@ -809,73 +843,9 @@ export const useAppSaveAllResource = () => {
                 finalHTML = '<!DOCTYPE html>\n' + finalHTML;
               }
 
-              // ──────────────────────────────────────────────
-              // KILL LAYER: Environment Poisoning (Framework Paralysis)
-              // ──────────────────────────────────────────────
-              // Inject the poison script at the very beginning of <head>
-              // This MUST execute before any other JavaScript to prevent framework hydration
-              console.log('[DEVTOOL] Injecting Kill Layer - Framework Paralysis Active');
-              
-              const killLayerScript = `<script>
-(function() {
-  // ═══════════════════════════════════════════════════════════
-  // 🛡️ CStudio Kill-Layer: GSAP-Safe Framework Paralysis
-  // ═══════════════════════════════════════════════════════════
-  // Simplified version that allows GSAP animations to work freely
-  // while still protecting VisBug edits from framework overwrites.
-  // ═══════════════════════════════════════════════════════════
-
-  // ─────────────────────────────────────────────────────────
-  // 1. Network Poison (Hang external requests)
-  // ─────────────────────────────────────────────────────────
-  const hang = () => new Promise(() => {});
-  const originalFetch = window.fetch;
-  
-  window.fetch = function(url, options) {
-    // Allow local/relative URLs and data URIs
-    if (typeof url === 'string' && 
-        (url.startsWith('/') || 
-         url.startsWith('./') || 
-         url.startsWith('../') || 
-         url.startsWith('data:') ||
-         url.startsWith('blob:'))) {
-      return originalFetch.apply(this, arguments);
-    }
-    return hang();
-  };
-
-  // ─────────────────────────────────────────────────────────
-  // 2. Safe Write Lock (GSAP & ScrollTrigger Whitelisted)
-  // ─────────────────────────────────────────────────────────
-  const originalSetProp = CSSStyleDeclaration.prototype.setProperty;
-  CSSStyleDeclaration.prototype.setProperty = function(prop, value, priority) {
-    // Whitelist GSAP & ScrollTrigger specific properties
-    const gsapProps = ['transform', 'opacity', 'visibility', 'translate', 'scale', 'rotate', 'display', 'position', 'left', 'top', 'right', 'bottom', 'width', 'height'];
-    if (gsapProps.some(p => prop.includes(p))) {
-      return originalSetProp.apply(this, arguments);
-    }
-    // Allow all other properties to pass through (less aggressive)
-    return originalSetProp.apply(this, arguments);
-  };
-
-  console.log('🛡️ CStudio Kill-Layer: Active (GSAP Safe)');
-})();
-</script>`;
-
-              // Inject the Kill Layer script right after <head> tag
-              const headTagMatch = finalHTML.match(/(<head[^>]*>)/i);
-              if (headTagMatch) {
-                const headTag = headTagMatch[1];
-                const headIndex = finalHTML.indexOf(headTag) + headTag.length;
-                finalHTML = finalHTML.slice(0, headIndex) + '\n' + killLayerScript + finalHTML.slice(headIndex);
-                console.log('[DEVTOOL] Kill Layer injected successfully at position:', headIndex);
-              } else {
-                console.warn('[DEVTOOL] Could not find <head> tag to inject Kill Layer');
-              }
-
               console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
               if (isV3Mode) {
-                console.log('[DEVTOOL] V3.0 Mode: Phantom Engine injected - React killed, GSAP CDN loaded, animations resurrected');
+                console.log('[DEVTOOL] V3.0 Mode: Phantom Engine injected with Ghost Lock (CSP) - Framework paralyzed, GSAP whitelisted');
               }
               
               // Store the asset manifest for ZIP creation
