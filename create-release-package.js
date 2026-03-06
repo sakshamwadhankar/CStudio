@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 console.log('📦 Creating Release Package...\n');
 
 const sourceDir = 'ResourcesSaverExt-master/unpacked2x';
-const outputZip = 'CStudio-Edit-Clone-v3.0.0.zip';
+const outputZip = 'CStudio-Edit-Clone-v4.1.2.zip';
 
 // Check if source directory exists
 if (!fs.existsSync(sourceDir)) {

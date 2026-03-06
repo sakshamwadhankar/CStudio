@@ -177,6 +177,38 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
     delete mainResource._assetManifest;
   }
 
+  // ── ADD GSAP FILES TO ZIP ──
+  if (mainResource && mainResource._gsapFiles && mainResource._gsapFiles.length > 0) {
+    mainResource._gsapFiles.forEach(file => {
+      assetPromises.push(
+        zipWriter.add(file.filename, new zip.TextReader(file.content))
+      );
+    });
+    console.log(`[DEVTOOL] Added ${mainResource._gsapFiles.length} GSAP files to ZIP`);
+    
+    // Clean up
+    delete mainResource._gsapFiles;
+  }
+
+  // ── ADD DOWNLOADED ASSETS TO ZIP ──
+  if (mainResource && mainResource._downloadedAssets && mainResource._downloadedAssets.length > 0) {
+    mainResource._downloadedAssets.forEach(asset => {
+      if (asset.encoding === 'base64') {
+        assetPromises.push(
+          zipWriter.add(asset.localPath, new zip.TextReader(asset.content), { base64: true })
+        );
+      } else {
+        assetPromises.push(
+          zipWriter.add(asset.localPath, new zip.TextReader(asset.content))
+        );
+      }
+    });
+    console.log(`[DEVTOOL] Added ${mainResource._downloadedAssets.length} remote assets to ZIP`);
+    
+    // Clean up
+    delete mainResource._downloadedAssets;
+  }
+
   // Wait for all assets to be added, then add regular resources
   Promise.all(assetPromises).then(() => {
     addItemsToZipWriter(
@@ -227,12 +259,15 @@ export const addItemsToZipWriter = (zipWriter, items, options, resourceMap, each
   // if item exist so add it to zip
   if (item) {
     // ── Smart Patcher: rewrite absolute URLs to relative paths ──
-    if (isPatchableFile(item) && resourceMap && resourceMap.size > 0) {
+    // NUCLEAR OVERRIDE: Skip patchContent if item has _skipPatchContent flag (DOM already fixed)
+    if (isPatchableFile(item) && resourceMap && resourceMap.size > 0 && !item._skipPatchContent) {
       try {
         item.content = patchContent(item.content, item.saveAs.path, resourceMap);
       } catch (err) {
         console.log('[DEVTOOL]', 'Cannot patch file', item.saveAs?.path, err);
       }
+    } else if (item._skipPatchContent) {
+      console.log('[DEVTOOL]', 'Skipping patchContent for', item.saveAs?.path, '(DOM already fixed by PathRemapper)');
     }
 
     // Beautify here

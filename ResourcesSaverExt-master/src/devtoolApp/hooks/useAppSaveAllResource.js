@@ -19,6 +19,249 @@ const SUB_RESOURCE_SETTLE_MS = 1500;
 
 const VOID_ELEMENTS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
 
+class PathRemapper {
+  constructor() {
+    this._assetCount = 0;
+  }
+
+  async run(clone, mainResource) {
+    mainResource._downloadedAssets = [];
+    
+    // Scan for remote URLs in various attributes
+    const remoteUrls = this._scanForRemoteUrls(clone);
+    
+    console.log(`[PathRemapper] Found ${remoteUrls.length} remote URLs to download`);
+    
+    // Download each asset
+    for (const { url, element, attribute } of remoteUrls) {
+      try {
+        // Check if extension context is still valid
+        if (!chrome.runtime?.id) {
+          console.warn('[PathRemapper] Extension context invalidated, stopping downloads');
+          break;
+        }
+        
+        // Use fetch with no-cors mode for cross-origin resources
+        const response = await fetch(url, { 
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        const content = await this._blobToBase64(blob);
+        const ext = this._getExtensionFromUrl(url, blob.type) || 'bin';
+        const localPath = `assets/remote/asset_${String(this._assetCount++).padStart(3, '0')}.${ext}`;
+        
+        mainResource._downloadedAssets.push({
+          url,
+          localPath,
+          content,
+          encoding: 'base64'
+        });
+        
+        // MISSION 2: Replace URL in clone with strict relative path (add ./ prefix)
+        const strictRelativePath = localPath.startsWith('./') ? localPath : './' + localPath;
+        element.setAttribute(attribute, strictRelativePath);
+        
+        console.log(`[PathRemapper] ✓ Downloaded: ${url} → ${strictRelativePath}`);
+      } catch (err) {
+        console.warn(`[PathRemapper] ✗ Failed to download ${url}:`, err.message || err);
+        // Leave the original URL in place if download fails
+        // The resource might still be accessible from the original CDN
+      }
+    }
+    
+    console.log(`[PathRemapper] Downloaded ${mainResource._downloadedAssets.length}/${remoteUrls.length} remote assets`);
+  }
+
+  _scanForRemoteUrls(clone) {
+    const remoteUrls = [];
+    const seenUrls = new Set();
+    
+    // Scan src attributes (img, script, iframe, etc.)
+    clone.querySelectorAll('[src]').forEach(el => {
+      const url = el.getAttribute('src');
+      if (this._isRemoteUrl(url) && !seenUrls.has(url)) {
+        seenUrls.add(url);
+        remoteUrls.push({ url, element: el, attribute: 'src' });
+      }
+    });
+    
+    // Scan href attributes (link, a)
+    clone.querySelectorAll('link[href]').forEach(el => {
+      const url = el.getAttribute('href');
+      // Only download stylesheets and other resources, not navigation links
+      if (el.getAttribute('rel') === 'stylesheet' && this._isRemoteUrl(url) && !seenUrls.has(url)) {
+        seenUrls.add(url);
+        remoteUrls.push({ url, element: el, attribute: 'href' });
+      }
+    });
+    
+    // Scan srcset attributes
+    clone.querySelectorAll('[srcset]').forEach(el => {
+      const srcset = el.getAttribute('srcset');
+      if (!srcset) return;
+      
+      // Parse srcset: "url1 1x, url2 2x" or "url1 100w, url2 200w"
+      const urls = srcset.split(',').map(part => {
+        const trimmed = part.trim();
+        const spaceIdx = trimmed.search(/\s+/);
+        return spaceIdx === -1 ? trimmed : trimmed.substring(0, spaceIdx);
+      });
+      
+      urls.forEach(url => {
+        if (this._isRemoteUrl(url) && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          remoteUrls.push({ url, element: el, attribute: 'srcset' });
+        }
+      });
+    });
+    
+    // Scan CSS background-image in inline styles
+    clone.querySelectorAll('[style*="background-image"]').forEach(el => {
+      const style = el.getAttribute('style');
+      if (!style) return;
+      
+      const regex = /background-image\s*:\s*url\(\s*["']?([^"')]+)["']?\s*\)/gi;
+      let match;
+      while ((match = regex.exec(style)) !== null) {
+        const url = match[1];
+        if (this._isRemoteUrl(url) && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          remoteUrls.push({ url, element: el, attribute: 'style' });
+        }
+      }
+    });
+    
+    return remoteUrls;
+  }
+
+  _isRemoteUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    
+    // Filter out data: URIs
+    if (url.startsWith('data:')) return false;
+    
+    // Filter out already-absolute local paths (relative paths like 'assets/...')
+    if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('//')) return false;
+    
+    // Filter out Google Fonts (protected by data-server-no-download)
+    if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) return false;
+    
+    // OPTIONAL: Filter out large video files (they might be CORS-protected and huge)
+    // Uncomment if you want to skip videos:
+    // if (url.match(/\.(mp4|webm|ogg|mov|avi)(\?|$)/i)) return false;
+    
+    return true;
+  }
+
+  async _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        // Remove the data URL prefix (e.g., "data:image/png;base64,")
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  _getExtensionFromUrl(url, contentType = null) {
+    // MISSION 3: Strip query params and handle complex CDN URLs
+    try {
+      const urlObj = new URL(url);
+      let pathname = urlObj.pathname;
+      
+      // Strip query parameters from pathname (for CDN URLs like Storyblok)
+      const queryIdx = pathname.indexOf('?');
+      if (queryIdx !== -1) {
+        pathname = pathname.substring(0, queryIdx);
+      }
+      
+      const lastDot = pathname.lastIndexOf('.');
+      const lastSlash = pathname.lastIndexOf('/');
+      
+      // Extension must come after the last slash
+      if (lastDot > lastSlash && lastDot !== -1) {
+        let ext = pathname.substring(lastDot + 1).toLowerCase();
+        // Clean any remaining query params or fragments
+        ext = ext.split('?')[0].split('#')[0];
+        if (ext && ext.length <= 5) { // Reasonable extension length
+          return ext;
+        }
+      }
+    } catch (e) {
+      // Invalid URL, try simple extraction
+      let cleanUrl = url.split('?')[0].split('#')[0]; // Strip query params first
+      const lastDot = cleanUrl.lastIndexOf('.');
+      const lastSlash = cleanUrl.lastIndexOf('/');
+      if (lastDot > lastSlash && lastDot !== -1) {
+        const ext = cleanUrl.substring(lastDot + 1).toLowerCase();
+        if (ext && ext.length <= 5) {
+          return ext;
+        }
+      }
+    }
+    
+    // Fallback to contentType if URL parsing failed
+    if (contentType) {
+      const typeMap = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/svg+xml': 'svg',
+        'text/css': 'css',
+        'text/javascript': 'js',
+        'application/javascript': 'js',
+        'application/json': 'json',
+        'video/mp4': 'mp4',
+        'video/webm': 'webm'
+      };
+      const ext = typeMap[contentType.toLowerCase()];
+      if (ext) return ext;
+    }
+    
+    return 'bin';
+  }
+}
+
+class GSAPBundler {
+  async bundle(mainResource) {
+    mainResource._gsapFiles = [];
+    
+    try {
+      // Fetch gsap.min.js
+      const gsapResponse = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js');
+      const gsapContent = await gsapResponse.text();
+      mainResource._gsapFiles.push({
+        filename: 'js/gsap.min.js',
+        content: gsapContent
+      });
+      
+      // Fetch ScrollTrigger.min.js
+      const stResponse = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js');
+      const stContent = await stResponse.text();
+      mainResource._gsapFiles.push({
+        filename: 'js/ScrollTrigger.min.js',
+        content: stContent
+      });
+      
+      console.log(`[GSAPBundler] Bundled ${mainResource._gsapFiles.length} GSAP files`);
+    } catch (err) {
+      console.warn('[GSAPBundler] Failed to bundle GSAP files:', err);
+      mainResource._gsapFiles = [];
+    }
+  }
+}
+
 class AssetRipper {
   constructor(config = {}) {
     this.svgThreshold = config.svgThreshold || 1024;
@@ -64,7 +307,8 @@ class AssetRipper {
       const filename = `assets/icons/${id}.svg`;
       this.manifest.svgs.push({ id, filename, content: svgString });
       const img = svg.ownerDocument.createElement('img');
-      img.setAttribute('src', filename);
+      // MISSION 2: Use strict relative path in HTML
+      img.setAttribute('src', './' + filename);
       if (svg.getAttribute('style')) img.setAttribute('style', svg.getAttribute('style'));
       svg.parentNode.replaceChild(img, svg);
     });
@@ -113,7 +357,8 @@ class AssetRipper {
       const ext = data.split(';')[0].split('/')[1] || 'png';
       const filename = `assets/images/${id}.${ext}`;
       this.manifest.images.push({ id, filename, dataURI: data });
-      el.setAttribute(attr, filename);
+      // MISSION 2: Use strict relative path in HTML
+      el.setAttribute(attr, './' + filename);
     });
   }
 
@@ -128,7 +373,8 @@ class AssetRipper {
         const id = `img_${String(this._imgCount++).padStart(3, '0')}`;
         const filename = `assets/images/${id}.png`;
         this.manifest.images.push({ id, filename, dataURI: data });
-        style = style.replace(data, filename);
+        // MISSION 2: Use strict relative path in HTML
+        style = style.replace(data, './' + filename);
       }
       el.setAttribute('style', style);
     });
@@ -451,7 +697,22 @@ export const useAppSaveAllResource = () => {
   } = state;
 
   const handleOnSave = useCallback(async () => {
-    dispatch(uiActions.setIsSaving(true));
+    // ──────────────────────────────────────────────
+    // KEEP-ALIVE: Prevent Extension Context Invalidation
+    // ──────────────────────────────────────────────
+    // Notify background service worker that a heavy operation is starting.
+    // This prevents Manifest V3 from terminating the worker during long operations
+    // (e.g., downloading many remote assets in PathRemapper).
+    try {
+      await chrome.runtime.sendMessage({ type: 'CSTUDIO_KEEP_ALIVE_START' });
+      console.log('[CStudio] Keep-alive activated for save operation');
+    } catch (err) {
+      console.warn('[CStudio] Failed to activate keep-alive:', err);
+      // Continue anyway - the operation might still succeed
+    }
+    
+    try {
+      dispatch(uiActions.setIsSaving(true));
     for (let i = 0; i < downloadList.length; i++) {
       const downloadItem = downloadList[i];
       dispatch(uiActions.setSavingIndex(i));
@@ -786,12 +1047,12 @@ export const useAppSaveAllResource = () => {
                         }, true);
 
                         const s1 = document.createElement('script'); 
-                        s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js'; 
+                        s1.src = './js/gsap.min.js'; 
                         s1.setAttribute('nonce', '\${nonce}');
                         document.body.appendChild(s1);
                         
                         const s2 = document.createElement('script'); 
-                        s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js'; 
+                        s2.src = './js/ScrollTrigger.min.js'; 
                         s2.setAttribute('nonce', '\${nonce}');
                         document.body.appendChild(s2);
                         
@@ -871,6 +1132,12 @@ export const useAppSaveAllResource = () => {
               const doc = parser.parseFromString(capturedDOM, 'text/html');
               const clone = doc.documentElement;
 
+              // Stage 0: PathRemapper - Download remote assets
+              console.log('[DEVTOOL] Stage 0: PathRemapper - Downloading remote assets...');
+              const pathRemapper = new PathRemapper();
+              await pathRemapper.run(clone, mainResource);
+              console.log('[DEVTOOL] PathRemapper Complete:', mainResource._downloadedAssets?.length || 0, 'assets downloaded');
+
               // Stage 1: Asset Ripper - Extract SVGs and Base64 images
               console.log('[DEVTOOL] Stage 1: Asset Ripper - Extracting inline assets...');
               const ripper = new AssetRipper();
@@ -882,8 +1149,10 @@ export const useAppSaveAllResource = () => {
               const unwrappedCount = ripper.unwrapMeaninglessDivs(clone);
               console.log(`[DEVTOOL] Structural Unwrapping Complete: ${unwrappedCount} wrappers removed`);
 
-              // Stage 4: DOM URL Normalization - Convert relative paths to absolute for CStudio URL replacer
-              ripper.normalizePathsToAbsolute(clone);
+              // NUCLEAR OVERRIDE: Stage 4 DISABLED - PathRemapper already set strict relative paths
+              // Stage 4 was converting our ./js/gsap.min.js back to http://localhost:3000/js/gsap.min.js
+              // which then got mangled by legacy patchContent. We don't need it anymore.
+              // ripper.normalizePathsToAbsolute(clone); // DISABLED
 
               // Stage 5: HTML Beautifier - Generate clean, formatted HTML
               console.log('[DEVTOOL] Stage 5: HTML Beautifier - Formatting output...');
@@ -903,6 +1172,14 @@ export const useAppSaveAllResource = () => {
               // Store the asset manifest for ZIP creation
               mainResource.content = finalHTML;
               mainResource._assetManifest = assetManifest;
+              // NUCLEAR OVERRIDE: Skip legacy patchContent for main HTML - we've already fixed all paths in DOM
+              mainResource._skipPatchContent = true;
+
+              // Stage 6: GSAP Bundler - Fetch GSAP libraries for offline use
+              console.log('[DEVTOOL] Stage 6: GSAP Bundler - Fetching GSAP libraries...');
+              const gsapBundler = new GSAPBundler();
+              await gsapBundler.bundle(mainResource);
+              console.log('[DEVTOOL] GSAP Bundler Complete');
             }
           } catch (err) {
             console.log('[DEVTOOL] Error during DOM snapshot:', err);
@@ -932,6 +1209,19 @@ export const useAppSaveAllResource = () => {
     }
     dispatch(uiActions.setStatus(UI_INITIAL_STATE.status));
     dispatch(uiActions.setIsSaving(false));
+    } finally {
+      // ──────────────────────────────────────────────
+      // KEEP-ALIVE: Stop keep-alive after operation completes
+      // ──────────────────────────────────────────────
+      // Always stop keep-alive, even if operation failed
+      try {
+        await chrome.runtime.sendMessage({ type: 'CSTUDIO_KEEP_ALIVE_STOP' });
+        console.log('[CStudio] Keep-alive deactivated after save operation');
+      } catch (err) {
+        console.warn('[CStudio] Failed to deactivate keep-alive:', err);
+        // Not critical - the worker will naturally sleep after 30s
+      }
+    }
   }, [state, dispatch, tab]);
 
   useEffect(() => {
