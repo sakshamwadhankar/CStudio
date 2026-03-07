@@ -44,6 +44,11 @@ export const getRelativePath = (fromPath, toPath) => {
  * Only replaces URLs that actually exist in `resourceMap`.
  */
 export const patchContent = (content, currentFilePath, resourceMap) => {
+  // DISABLED: Nuclear override - PathRemapper already fixed all paths in DOM
+  // This function was causing path mangling issues by converting ./js/gsap.min.js back to relative paths
+  return content;
+  
+  /* ORIGINAL IMPLEMENTATION DISABLED
   if (!content || typeof content !== 'string') return content;
 
   let patched = content;
@@ -65,6 +70,7 @@ export const patchContent = (content, currentFilePath, resourceMap) => {
   }
 
   return patched;
+  */
 };
 
 /**
