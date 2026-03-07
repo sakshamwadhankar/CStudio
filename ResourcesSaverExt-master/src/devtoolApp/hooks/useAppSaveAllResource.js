@@ -1181,6 +1181,12 @@ export const useAppSaveAllResource = () => {
                 console.log('[DEVTOOL] V3.0 Mode: Phantom Engine injected with Ghost Lock (CSP) - Framework paralyzed, GSAP whitelisted');
               }
               
+              // NUCLEAR CLEANUP: Remove ALL localhost and port references before storing in ZIP
+              finalHTML = finalHTML.split(':3000/').join('./');
+              finalHTML = finalHTML.split('http://localhost:3000/').join('./');
+              finalHTML = finalHTML.split('http://localhost/').join('./');
+              console.log('[DEVTOOL] Nuclear cleanup: Removed all localhost and port references');
+              
               // Store the asset manifest for ZIP creation
               mainResource.content = finalHTML;
               mainResource._assetManifest = assetManifest;
