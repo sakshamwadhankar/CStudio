@@ -63,8 +63,9 @@ class PathRemapper {
           encoding: 'base64'
         });
         
+        // FIX 2: FORCE STRICT RELATIVE PATHS IN REMAPPER
         // MISSION 2: Replace URL in clone with strict relative path (add ./ prefix)
-        const strictRelativePath = localPath.startsWith('./') ? localPath : './' + localPath;
+        const strictRelativePath = './' + localPath;
         element.setAttribute(attribute, strictRelativePath);
         
         console.log(`[PathRemapper] ✓ Downloaded: ${url} → ${strictRelativePath}`);
@@ -304,11 +305,11 @@ class AssetRipper {
       if (!svg.hasAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       svgString = serializer.serializeToString(svg);
       const id = `svg_${String(this._svgCount++).padStart(3, '0')}`;
-      const filename = `assets/icons/${id}.svg`;
+      const filename = `assets/svg/${id}.svg`;
       this.manifest.svgs.push({ id, filename, content: svgString });
       const img = svg.ownerDocument.createElement('img');
-      // MISSION 2: Use strict relative path in HTML
-      img.setAttribute('src', './' + filename);
+      // FIX 2: FORCE STRICT RELATIVE PATHS - Use strict relative path in HTML
+      img.setAttribute('src', './assets/svg/' + id + '.svg');
       if (svg.getAttribute('style')) img.setAttribute('style', svg.getAttribute('style'));
       svg.parentNode.replaceChild(img, svg);
     });
@@ -357,8 +358,8 @@ class AssetRipper {
       const ext = data.split(';')[0].split('/')[1] || 'png';
       const filename = `assets/images/${id}.${ext}`;
       this.manifest.images.push({ id, filename, dataURI: data });
-      // MISSION 2: Use strict relative path in HTML
-      el.setAttribute(attr, './' + filename);
+      // FIX 2: FORCE STRICT RELATIVE PATHS - Use strict relative path in HTML
+      el.setAttribute(attr, './assets/images/' + id + '.' + ext);
     });
   }
 
@@ -373,8 +374,8 @@ class AssetRipper {
         const id = `img_${String(this._imgCount++).padStart(3, '0')}`;
         const filename = `assets/images/${id}.png`;
         this.manifest.images.push({ id, filename, dataURI: data });
-        // MISSION 2: Use strict relative path in HTML
-        style = style.replace(data, './' + filename);
+        // FIX 2: FORCE STRICT RELATIVE PATHS - Use strict relative path in HTML
+        style = style.replace(data, './assets/images/' + id + '.png');
       }
       el.setAttribute('style', style);
     });
@@ -846,6 +847,11 @@ export const useAppSaveAllResource = () => {
                     // 6. SANITIZE CLONE
                     clone.querySelectorAll('meta[http-equiv="Content-Security-Policy"], meta[http-equiv="refresh"]').forEach(el => el.remove());
                     clone.querySelectorAll('vis-bug, #visbug, [src^="chrome-extension://"], [href^="chrome-extension://"], [src^="invalid/"]').forEach(el => el.remove());
+                    
+                    // FIX 3: CLEAN UP VISBUG UI IN STAGE 2
+                    const visbugElements = clone.querySelectorAll('vis-bug, .visbug, [id^="visbug"], [class*="visbug"]');
+                    visbugElements.forEach(el => el.remove());
+                    console.log('[DEVTOOL] Stage 2: Removed ' + visbugElements.length + ' VisBug UI elements');
 
                     // CRITICAL HOTFIX: Protect Google Fonts from being downloaded as broken local resources
                     clone.querySelectorAll('link[href*="fonts.googleapis"]').forEach(el => {
@@ -1163,6 +1169,12 @@ export const useAppSaveAllResource = () => {
               if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
                 finalHTML = '<!DOCTYPE html>\n' + finalHTML;
               }
+              
+              // FIX 4: CLEAN UP ANY REMAINING :3000 GHOSTS
+              // Just to be absolutely safe, run one final regex on the entire HTML string BEFORE beautification
+              finalHTML = finalHTML.replace(/:[0-9]{4}\/assets/g, './assets');
+              finalHTML = finalHTML.replace(/:[0-9]{4}\/js/g, './js');
+              console.log('[DEVTOOL] Stage 5: Cleaned up port number ghosts from final HTML');
 
               console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
               if (isV3Mode) {
