@@ -6,6 +6,7 @@ import { resetNetworkResource } from '../store/networkResource';
 import { resetStaticResource } from '../store/staticResource';
 import { INITIAL_STATE as UI_INITIAL_STATE } from '../store/ui';
 import useStore from '../store';
+import CSTUDIO_INTERACTIONS_CODE from 'bundle-text:../interactions/cstudio-interactions.js';
 
 /**
  * Delay (ms) to wait after page load for any in‑flight CSS sub‑resource
@@ -17,7 +18,7 @@ const SUB_RESOURCE_SETTLE_MS = 1500;
 // DOM UNBUILDER PIPELINE - Stage 1 & 2
 // ──────────────────────────────────────────────
 
-const VOID_ELEMENTS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+const VOID_ELEMENTS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 
 class PathRemapper {
   constructor() {
@@ -26,12 +27,12 @@ class PathRemapper {
 
   async run(clone, mainResource) {
     mainResource._downloadedAssets = [];
-    
+
     // Scan for remote URLs in various attributes
     const remoteUrls = this._scanForRemoteUrls(clone);
-    
+
     console.log(`[PathRemapper] Found ${remoteUrls.length} remote URLs to download`);
-    
+
     // Download each asset
     for (const { url, element, attribute } of remoteUrls) {
       try {
@@ -40,34 +41,34 @@ class PathRemapper {
           console.warn('[PathRemapper] Extension context invalidated, stopping downloads');
           break;
         }
-        
+
         // Use fetch with no-cors mode for cross-origin resources
-        const response = await fetch(url, { 
+        const response = await fetch(url, {
           mode: 'cors',
           credentials: 'omit'
         });
-        
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const blob = await response.blob();
         const content = await this._blobToBase64(blob);
         const ext = this._getExtensionFromUrl(url, blob.type) || 'bin';
         const localPath = `assets/remote/asset_${String(this._assetCount++).padStart(3, '0')}.${ext}`;
-        
+
         mainResource._downloadedAssets.push({
           url,
           localPath,
           content,
           encoding: 'base64'
         });
-        
+
         // FIX 2: FORCE STRICT RELATIVE PATHS IN REMAPPER
         // MISSION 2: Replace URL in clone with strict relative path (add ./ prefix)
         const strictRelativePath = './' + localPath;
         element.setAttribute(attribute, strictRelativePath);
-        
+
         console.log(`[PathRemapper] ✓ Downloaded: ${url} → ${strictRelativePath}`);
       } catch (err) {
         console.warn(`[PathRemapper] ✗ Failed to download ${url}:`, err.message || err);
@@ -75,14 +76,14 @@ class PathRemapper {
         // The resource might still be accessible from the original CDN
       }
     }
-    
+
     console.log(`[PathRemapper] Downloaded ${mainResource._downloadedAssets.length}/${remoteUrls.length} remote assets`);
   }
 
   _scanForRemoteUrls(clone) {
     const remoteUrls = [];
     const seenUrls = new Set();
-    
+
     // Scan src attributes (img, script, iframe, etc.)
     clone.querySelectorAll('[src]').forEach(el => {
       const url = el.getAttribute('src');
@@ -91,7 +92,7 @@ class PathRemapper {
         remoteUrls.push({ url, element: el, attribute: 'src' });
       }
     });
-    
+
     // Scan href attributes (link, a)
     clone.querySelectorAll('link[href]').forEach(el => {
       const url = el.getAttribute('href');
@@ -101,19 +102,19 @@ class PathRemapper {
         remoteUrls.push({ url, element: el, attribute: 'href' });
       }
     });
-    
+
     // Scan srcset attributes
     clone.querySelectorAll('[srcset]').forEach(el => {
       const srcset = el.getAttribute('srcset');
       if (!srcset) return;
-      
+
       // Parse srcset: "url1 1x, url2 2x" or "url1 100w, url2 200w"
       const urls = srcset.split(',').map(part => {
         const trimmed = part.trim();
         const spaceIdx = trimmed.search(/\s+/);
         return spaceIdx === -1 ? trimmed : trimmed.substring(0, spaceIdx);
       });
-      
+
       urls.forEach(url => {
         if (this._isRemoteUrl(url) && !seenUrls.has(url)) {
           seenUrls.add(url);
@@ -121,12 +122,12 @@ class PathRemapper {
         }
       });
     });
-    
+
     // Scan CSS background-image in inline styles
     clone.querySelectorAll('[style*="background-image"]').forEach(el => {
       const style = el.getAttribute('style');
       if (!style) return;
-      
+
       const regex = /background-image\s*:\s*url\(\s*["']?([^"')]+)["']?\s*\)/gi;
       let match;
       while ((match = regex.exec(style)) !== null) {
@@ -137,26 +138,26 @@ class PathRemapper {
         }
       }
     });
-    
+
     return remoteUrls;
   }
 
   _isRemoteUrl(url) {
     if (!url || typeof url !== 'string') return false;
-    
+
     // Filter out data: URIs
     if (url.startsWith('data:')) return false;
-    
+
     // Filter out already-absolute local paths (relative paths like 'assets/...')
     if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('//')) return false;
-    
+
     // Filter out Google Fonts (protected by data-server-no-download)
     if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) return false;
-    
+
     // OPTIONAL: Filter out large video files (they might be CORS-protected and huge)
     // Uncomment if you want to skip videos:
     // if (url.match(/\.(mp4|webm|ogg|mov|avi)(\?|$)/i)) return false;
-    
+
     return true;
   }
 
@@ -178,16 +179,16 @@ class PathRemapper {
     try {
       const urlObj = new URL(url);
       let pathname = urlObj.pathname;
-      
+
       // Strip query parameters from pathname (for CDN URLs like Storyblok)
       const queryIdx = pathname.indexOf('?');
       if (queryIdx !== -1) {
         pathname = pathname.substring(0, queryIdx);
       }
-      
+
       const lastDot = pathname.lastIndexOf('.');
       const lastSlash = pathname.lastIndexOf('/');
-      
+
       // Extension must come after the last slash
       if (lastDot > lastSlash && lastDot !== -1) {
         let ext = pathname.substring(lastDot + 1).toLowerCase();
@@ -209,7 +210,7 @@ class PathRemapper {
         }
       }
     }
-    
+
     // Fallback to contentType if URL parsing failed
     if (contentType) {
       const typeMap = {
@@ -229,7 +230,7 @@ class PathRemapper {
       const ext = typeMap[contentType.toLowerCase()];
       if (ext) return ext;
     }
-    
+
     return 'bin';
   }
 }
@@ -237,7 +238,7 @@ class PathRemapper {
 class GSAPBundler {
   async bundle(mainResource) {
     mainResource._gsapFiles = [];
-    
+
     try {
       // Fetch gsap.min.js
       const gsapResponse = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js');
@@ -246,7 +247,7 @@ class GSAPBundler {
         filename: 'js/gsap.min.js',
         content: gsapContent
       });
-      
+
       // Fetch ScrollTrigger.min.js
       const stResponse = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js');
       const stContent = await stResponse.text();
@@ -254,12 +255,19 @@ class GSAPBundler {
         filename: 'js/ScrollTrigger.min.js',
         content: stContent
       });
-      
+
       console.log(`[GSAPBundler] Bundled ${mainResource._gsapFiles.length} GSAP files`);
     } catch (err) {
       console.warn('[GSAPBundler] Failed to bundle GSAP files:', err);
       mainResource._gsapFiles = [];
     }
+
+    // Bundle CStudio Interactions script (imported as raw text via bundle-text:)
+    mainResource._interactionsFile = {
+      filename: 'js/cstudio-interactions.js',
+      content: CSTUDIO_INTERACTIONS_CODE
+    };
+    console.log('[GSAPBundler] Bundled CStudio Interactions script');
   }
 }
 
@@ -381,37 +389,37 @@ class AssetRipper {
     });
   }
 
-  _extractBase64Srcset(clone) {} // Placeholder
+  _extractBase64Srcset(clone) { } // Placeholder
 
   // ──────────────────────────────────────────────
   // Stage 3: Structural Unwrapping (Melting Div-ception)
   // ──────────────────────────────────────────────
   unwrapMeaninglessDivs(clone) {
     let unwrappedCount = 0;
-    
+
     // Process bottom-up: get all elements and reverse
     const allElements = Array.from(clone.querySelectorAll('*')).reverse();
-    
+
     allElements.forEach(el => {
       // Only process divs and spans
       if (el.tagName !== 'DIV' && el.tagName !== 'SPAN') return;
-      
+
       // Skip if element has semantic meaning
       if (this._hasSemanticMeaning(el)) return;
-      
+
       // Skip if element has visual styles
       if (this._hasVisualStyles(el)) return;
-      
+
       // Element is meaningless - unwrap it
       if (this._canUnwrap(el)) {
         this._unwrapElement(el);
         unwrappedCount++;
       }
     });
-    
+
     // Clean framework roots
     this._cleanFrameworkRoots(clone);
-    
+
     console.log(`[DEVTOOL] Stage 3: Unwrapped ${unwrappedCount} meaningless divs`);
     return unwrappedCount;
   }
@@ -420,149 +428,149 @@ class AssetRipper {
     // Has ID, role, or ARIA attributes
     if (el.hasAttribute('id')) return true;
     if (el.hasAttribute('role')) return true;
-    
+
     // CRITICAL HOTFIX: Protect elements that rely on CSS classes for layout
     // Without Stage 0 (Class Fossilization), we must preserve ALL class-based styling
     if (el.hasAttribute('class') && el.getAttribute('class').trim() !== '') return true;
-    
+
     // CRITICAL: Protect CStudio animation markers from unwrapper
     const classList = el.className;
     if (typeof classList === 'string' && classList.includes('cstudio-animate-me')) return true;
-    
+
     for (let attr of el.attributes) {
       if (attr.name.startsWith('aria-')) return true;
       if (attr.name.startsWith('data-cstudio-')) return true; // Preserve our markers
     }
-    
+
     return false;
   }
 
   _hasVisualStyles(el) {
     const style = el.getAttribute('style') || '';
     const computedStyle = style.toLowerCase();
-    
+
     // Check for layout-defining display modes
-    if (computedStyle.includes('display: flex') || 
-        computedStyle.includes('display:flex') ||
-        computedStyle.includes('display: grid') ||
-        computedStyle.includes('display:grid') ||
-        computedStyle.includes('display: table') ||
-        computedStyle.includes('display:table')) {
+    if (computedStyle.includes('display: flex') ||
+      computedStyle.includes('display:flex') ||
+      computedStyle.includes('display: grid') ||
+      computedStyle.includes('display:grid') ||
+      computedStyle.includes('display: table') ||
+      computedStyle.includes('display:table')) {
       return true;
     }
-    
+
     // Check for positioning
     if (computedStyle.includes('position: absolute') ||
-        computedStyle.includes('position:absolute') ||
-        computedStyle.includes('position: fixed') ||
-        computedStyle.includes('position:fixed') ||
-        computedStyle.includes('position: relative') ||
-        computedStyle.includes('position:relative') ||
-        computedStyle.includes('position: sticky') ||
-        computedStyle.includes('position:sticky')) {
+      computedStyle.includes('position:absolute') ||
+      computedStyle.includes('position: fixed') ||
+      computedStyle.includes('position:fixed') ||
+      computedStyle.includes('position: relative') ||
+      computedStyle.includes('position:relative') ||
+      computedStyle.includes('position: sticky') ||
+      computedStyle.includes('position:sticky')) {
       return true;
     }
-    
+
     // Check for visual properties
-    if (computedStyle.includes('background') && 
-        !computedStyle.includes('background: none') &&
-        !computedStyle.includes('background:none') &&
-        !computedStyle.includes('background: transparent') &&
-        !computedStyle.includes('background:transparent')) {
+    if (computedStyle.includes('background') &&
+      !computedStyle.includes('background: none') &&
+      !computedStyle.includes('background:none') &&
+      !computedStyle.includes('background: transparent') &&
+      !computedStyle.includes('background:transparent')) {
       return true;
     }
-    
-    if (computedStyle.includes('border') && 
-        !computedStyle.includes('border: none') &&
-        !computedStyle.includes('border:none') &&
-        !computedStyle.includes('border: 0') &&
-        !computedStyle.includes('border:0')) {
+
+    if (computedStyle.includes('border') &&
+      !computedStyle.includes('border: none') &&
+      !computedStyle.includes('border:none') &&
+      !computedStyle.includes('border: 0') &&
+      !computedStyle.includes('border:0')) {
       return true;
     }
-    
+
     if (computedStyle.includes('box-shadow')) return true;
     if (computedStyle.includes('text-shadow')) return true;
-    
+
     // Check for opacity
     const opacityMatch = computedStyle.match(/opacity\s*:\s*([\d.]+)/);
     if (opacityMatch && parseFloat(opacityMatch[1]) < 1) return true;
-    
+
     // Check for transform (might be animated)
-    if (computedStyle.includes('transform') && 
-        !computedStyle.includes('transform: none') &&
-        !computedStyle.includes('transform:none')) {
+    if (computedStyle.includes('transform') &&
+      !computedStyle.includes('transform: none') &&
+      !computedStyle.includes('transform:none')) {
       return true;
     }
-    
+
     // Check for padding/margin (spacing matters)
     // Allow unwrapping if only one child - we can transfer spacing
     if (el.children.length > 1) {
-      if (computedStyle.includes('padding') && 
-          !computedStyle.includes('padding: 0') &&
-          !computedStyle.includes('padding:0')) {
+      if (computedStyle.includes('padding') &&
+        !computedStyle.includes('padding: 0') &&
+        !computedStyle.includes('padding:0')) {
         return true;
       }
-      if (computedStyle.includes('margin') && 
-          !computedStyle.includes('margin: 0') &&
-          !computedStyle.includes('margin:0') &&
-          !computedStyle.includes('margin: auto') &&
-          !computedStyle.includes('margin:auto')) {
+      if (computedStyle.includes('margin') &&
+        !computedStyle.includes('margin: 0') &&
+        !computedStyle.includes('margin:0') &&
+        !computedStyle.includes('margin: auto') &&
+        !computedStyle.includes('margin:auto')) {
         return true;
       }
     }
-    
+
     // Check for width/height constraints
-    if (computedStyle.includes('width') || 
-        computedStyle.includes('height') ||
-        computedStyle.includes('max-width') ||
-        computedStyle.includes('max-height') ||
-        computedStyle.includes('min-width') ||
-        computedStyle.includes('min-height')) {
+    if (computedStyle.includes('width') ||
+      computedStyle.includes('height') ||
+      computedStyle.includes('max-width') ||
+      computedStyle.includes('max-height') ||
+      computedStyle.includes('min-width') ||
+      computedStyle.includes('min-height')) {
       return true;
     }
-    
+
     // Check for overflow
-    if (computedStyle.includes('overflow') && 
-        !computedStyle.includes('overflow: visible') &&
-        !computedStyle.includes('overflow:visible')) {
+    if (computedStyle.includes('overflow') &&
+      !computedStyle.includes('overflow: visible') &&
+      !computedStyle.includes('overflow:visible')) {
       return true;
     }
-    
+
     // Check for z-index
     if (computedStyle.includes('z-index')) return true;
-    
+
     return false;
   }
 
   _canUnwrap(el) {
     // Must have a parent to unwrap into
     if (!el.parentNode) return false;
-    
+
     // Don't unwrap body or html
     if (el.tagName === 'BODY' || el.tagName === 'HTML') return false;
-    
+
     // Must have at least one child (text or element)
     if (el.childNodes.length === 0) return false;
-    
+
     return true;
   }
 
   _unwrapElement(el) {
     const parent = el.parentNode;
-    
+
     // If element has spacing and exactly one child, transfer spacing to child
     if (el.children.length === 1 && el.hasAttribute('style')) {
       const style = el.getAttribute('style');
       const child = el.children[0];
-      
+
       // Transfer padding/margin to child
       const paddingMatch = style.match(/padding[^;]*/gi);
       const marginMatch = style.match(/margin[^;]*/gi);
-      
+
       if (paddingMatch || marginMatch) {
         const childStyle = child.getAttribute('style') || '';
         let newStyle = childStyle;
-        
+
         if (paddingMatch) {
           paddingMatch.forEach(p => {
             if (!childStyle.includes('padding')) {
@@ -570,7 +578,7 @@ class AssetRipper {
             }
           });
         }
-        
+
         if (marginMatch) {
           marginMatch.forEach(m => {
             if (!childStyle.includes('margin')) {
@@ -578,18 +586,18 @@ class AssetRipper {
             }
           });
         }
-        
+
         if (newStyle !== childStyle) {
           child.setAttribute('style', newStyle.trim());
         }
       }
     }
-    
+
     // Move all children to parent before this element
     while (el.firstChild) {
       parent.insertBefore(el.firstChild, el);
     }
-    
+
     // Remove the now-empty wrapper
     parent.removeChild(el);
   }
@@ -597,15 +605,15 @@ class AssetRipper {
   _cleanFrameworkRoots(clone) {
     // Force unwrap framework containers if they're just wrappers
     const frameworkIds = ['root', '__next', '__nuxt', 'app', '__app'];
-    
+
     frameworkIds.forEach(id => {
       const el = clone.querySelector(`#${id}`);
       if (!el) return;
-      
+
       // Only unwrap if it's a div/span with no visual styles
-      if ((el.tagName === 'DIV' || el.tagName === 'SPAN') && 
-          !this._hasVisualStyles(el) && 
-          this._canUnwrap(el)) {
+      if ((el.tagName === 'DIV' || el.tagName === 'SPAN') &&
+        !this._hasVisualStyles(el) &&
+        this._canUnwrap(el)) {
         console.log(`[DEVTOOL] Stage 3: Removing framework root #${id}`);
         this._unwrapElement(el);
       }
@@ -618,10 +626,10 @@ class AssetRipper {
   normalizePathsToAbsolute(clone) {
     const doc = clone.ownerDocument || document;
     const base = doc.baseURI || window.location.href;
-    
+
     console.log('[DEVTOOL] Stage 4: Normalizing relative URLs to absolute for CStudio URL replacer...');
     let normalizedCount = 0;
-    
+
     // Normalize hrefs and srcs
     clone.querySelectorAll('[src], [href]').forEach(el => {
       if (el.hasAttribute('src') && !el.getAttribute('src').startsWith('data:')) {
@@ -643,7 +651,7 @@ class AssetRipper {
         }
       }
     });
-    
+
     // Normalize inline CSS background-image urls
     clone.querySelectorAll('[style*="url("]').forEach(el => {
       let style = el.getAttribute('style');
@@ -657,7 +665,7 @@ class AssetRipper {
       });
       el.setAttribute('style', style);
     });
-    
+
     console.log(`[DEVTOOL] Stage 4: Normalized ${normalizedCount} URLs to absolute paths`);
   }
 }
@@ -711,78 +719,78 @@ export const useAppSaveAllResource = () => {
       console.warn('[CStudio] Failed to activate keep-alive:', err);
       // Continue anyway - the operation might still succeed
     }
-    
+
     try {
       dispatch(uiActions.setIsSaving(true));
-    for (let i = 0; i < downloadList.length; i++) {
-      const downloadItem = downloadList[i];
-      dispatch(uiActions.setSavingIndex(i));
-      await new Promise(async (resolve) => {
-        let loaded = true;
-        if (i > 0 || tab?.url !== downloadItem.url) {
-          loaded = await new Promise((r) => {
-            const tabChangeHandler = (tabId, changeInfo) => {
-              if (tabId !== chrome.devtools.inspectedWindow.tabId || !changeInfo || !changeInfo.status) {
-                return;
-              }
-              if (changeInfo.status === 'loading') {
-                return;
-              }
-              if (changeInfo.status === 'complete') {
-                setTimeout(() => {
-                  r(true);
-                }, 2000);
-              } else {
-                r(false);
-              }
-              chrome.tabs.onUpdated.removeListener(tabChangeHandler);
-            };
-            chrome.tabs.onUpdated.addListener(tabChangeHandler);
-            setTimeout(function () {
-              dispatch(uiActions.setTab({ url: downloadItem.url }));
-              chrome.tabs.update(chrome.devtools.inspectedWindow.tabId, { url: downloadItem.url });
-            }, 500);
-          });
-        }
+      for (let i = 0; i < downloadList.length; i++) {
+        const downloadItem = downloadList[i];
+        dispatch(uiActions.setSavingIndex(i));
+        await new Promise(async (resolve) => {
+          let loaded = true;
+          if (i > 0 || tab?.url !== downloadItem.url) {
+            loaded = await new Promise((r) => {
+              const tabChangeHandler = (tabId, changeInfo) => {
+                if (tabId !== chrome.devtools.inspectedWindow.tabId || !changeInfo || !changeInfo.status) {
+                  return;
+                }
+                if (changeInfo.status === 'loading') {
+                  return;
+                }
+                if (changeInfo.status === 'complete') {
+                  setTimeout(() => {
+                    r(true);
+                  }, 2000);
+                } else {
+                  r(false);
+                }
+                chrome.tabs.onUpdated.removeListener(tabChangeHandler);
+              };
+              chrome.tabs.onUpdated.addListener(tabChangeHandler);
+              setTimeout(function () {
+                dispatch(uiActions.setTab({ url: downloadItem.url }));
+                chrome.tabs.update(chrome.devtools.inspectedWindow.tabId, { url: downloadItem.url });
+              }, 500);
+            });
+          }
 
-        // ── Smart Patcher: settle delay ──
-        // Wait for CSS sub-resource fetches to complete before building ZIP.
-        dispatch(uiActions.setStatus('Waiting for CSS sub-resources to settle...'));
-        await new Promise((r) => setTimeout(r, SUB_RESOURCE_SETTLE_MS));
+          // ── Smart Patcher: settle delay ──
+          // Wait for CSS sub-resource fetches to complete before building ZIP.
+          dispatch(uiActions.setStatus('Waiting for CSS sub-resources to settle...'));
+          await new Promise((r) => setTimeout(r, SUB_RESOURCE_SETTLE_MS));
 
-        // Re-read refs AFTER the settle delay so newly discovered sub-resources
-        // are included in the final download list.
-        const toDownload = resolveDuplicatedResources([
-          ...(networkResourceRef.current || []),
-          ...(staticResourceRef.current || []),
-        ]);
+          // Re-read refs AFTER the settle delay so newly discovered sub-resources
+          // are included in the final download list.
+          const toDownload = resolveDuplicatedResources([
+            ...(networkResourceRef.current || []),
+            ...(staticResourceRef.current || []),
+          ]);
 
-        // ──────────────────────────────────────────────
-        // Phase 3: DOM Snapshot Engine + V3.0 Phantom Engine
-        // ──────────────────────────────────────────────
-        // Capture the "Live" HTML for the main page to fix empty React/Next.js shells.
-        // In V3.0 mode, kill React, strip broken modules, inject fresh GSAP from CDN.
+          // ──────────────────────────────────────────────
+          // Phase 3: DOM Snapshot Engine + V3.0 Phantom Engine
+          // ──────────────────────────────────────────────
+          // Capture the "Live" HTML for the main page to fix empty React/Next.js shells.
+          // In V3.0 mode, kill React, strip broken modules, inject fresh GSAP from CDN.
 
-        const version = localStorage.getItem('resources-saver-version');
-        const isV3Mode = version === '3';
+          const version = localStorage.getItem('resources-saver-version');
+          const isV3Mode = version === '3';
 
-        // Find the resource that matches the current page URL
-        const mainPageUrl = downloadItem.url;
-        // Match loosely to handle trailing slashes or subtle URL differences
-        const mainResource = toDownload.find(
-          (r) => r.url === mainPageUrl || r.url.replace(/\/$/, '') === mainPageUrl.replace(/\/$/, '')
-        );
+          // Find the resource that matches the current page URL
+          const mainPageUrl = downloadItem.url;
+          // Match loosely to handle trailing slashes or subtle URL differences
+          const mainResource = toDownload.find(
+            (r) => r.url === mainPageUrl || r.url.replace(/\/$/, '') === mainPageUrl.replace(/\/$/, '')
+          );
 
-        if (mainResource) {
-          dispatch(uiActions.setStatus(isV3Mode ? 'Capturing edited DOM (V3.0)...' : 'Snapshotting live DOM...'));
-          try {
-            const capturedDOM = await new Promise((resolveDOM) => {
-              // The V3.0 Phantom Engine Strategy:
-              // 1. Force absolute URLs for proper resource mapping
-              // 2. Kill React hydration (Hydration Nuke)
-              // 3. Remove all broken module scripts
-              // 4. Inject our own GSAP Phantom Engine from CDN
-              const captureScript = `
+          if (mainResource) {
+            dispatch(uiActions.setStatus(isV3Mode ? 'Capturing edited DOM (V3.0)...' : 'Snapshotting live DOM...'));
+            try {
+              const capturedDOM = await new Promise((resolveDOM) => {
+                // The V3.0 Phantom Engine Strategy:
+                // 1. Force absolute URLs for proper resource mapping
+                // 2. Kill React hydration (Hydration Nuke)
+                // 3. Remove all broken module scripts
+                // 4. Inject our own GSAP Phantom Engine from CDN
+                const captureScript = `
                 (function() {
                   const auditLog = {
                     status: "SUCCESS",
@@ -1062,6 +1070,12 @@ export const useAppSaveAllResource = () => {
                         s2.setAttribute('nonce', '\${nonce}');
                         document.body.appendChild(s2);
                         
+                        // Inject CStudio Interactions Script
+                        const interactionsScript = document.createElement('script');
+                        interactionsScript.src = './js/cstudio-interactions.js';
+                        interactionsScript.setAttribute('nonce', '\${nonce}');
+                        document.body.appendChild(interactionsScript);
+                        
                         let chk = 0;
                         const intGSAP = setInterval(() => {
                           chk++;
@@ -1106,127 +1120,127 @@ export const useAppSaveAllResource = () => {
                 })();
               `;
 
-              chrome.devtools.inspectedWindow.eval(
-                captureScript,
-                (result, isException) => {
-                  if (isException) {
-                    console.log('[DEVTOOL] DOM Snapshot failed:', isException);
+                chrome.devtools.inspectedWindow.eval(
+                  captureScript,
+                  (result, isException) => {
+                    if (isException) {
+                      console.log('[DEVTOOL] DOM Snapshot failed:', isException);
 
-                    // Check if it's an extension context invalidation error
-                    if (isException.code === 'E_PROTOCOLERROR' ||
-                      (isException.description && isException.description.includes('context invalidated'))) {
-                      console.error('[DEVTOOL] Extension context invalidated. Please close and reopen DevTools.');
-                      dispatch(uiActions.setStatus('ERROR: Extension context invalidated. Close and reopen DevTools.'));
+                      // Check if it's an extension context invalidation error
+                      if (isException.code === 'E_PROTOCOLERROR' ||
+                        (isException.description && isException.description.includes('context invalidated'))) {
+                        console.error('[DEVTOOL] Extension context invalidated. Please close and reopen DevTools.');
+                        dispatch(uiActions.setStatus('ERROR: Extension context invalidated. Close and reopen DevTools.'));
+                      }
+
+                      resolveDOM(null);
+                    } else {
+                      resolveDOM(result);
                     }
-
-                    resolveDOM(null);
-                  } else {
-                    resolveDOM(result);
                   }
+                );
+              });
+
+              if (capturedDOM) {
+                // ──────────────────────────────────────────────
+                // DOM UNBUILDER PIPELINE: Asset Ripper + Structural Unwrapping + HTML Beautifier
+                // ──────────────────────────────────────────────
+                dispatch(uiActions.setStatus('Running DOM Unbuilder Pipeline...'));
+
+                // Parse the captured DOM string back into a document
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(capturedDOM, 'text/html');
+                const clone = doc.documentElement;
+
+                // Stage 0: PathRemapper - Download remote assets
+                console.log('[DEVTOOL] Stage 0: PathRemapper - Downloading remote assets...');
+                const pathRemapper = new PathRemapper();
+                await pathRemapper.run(clone, mainResource);
+                console.log('[DEVTOOL] PathRemapper Complete:', mainResource._downloadedAssets?.length || 0, 'assets downloaded');
+
+                // Stage 1: Asset Ripper - Extract SVGs and Base64 images
+                console.log('[DEVTOOL] Stage 1: Asset Ripper - Extracting inline assets...');
+                const ripper = new AssetRipper();
+                const assetManifest = ripper.run(clone);
+                console.log('[DEVTOOL] Asset Ripper Complete:', assetManifest.stats);
+
+                // Stage 3: Structural Unwrapping - Melt meaningless div-ception
+                console.log('[DEVTOOL] Stage 3: Structural Unwrapping - Melting div-ception...');
+                const unwrappedCount = ripper.unwrapMeaninglessDivs(clone);
+                console.log(`[DEVTOOL] Structural Unwrapping Complete: ${unwrappedCount} wrappers removed`);
+
+                // NUCLEAR OVERRIDE: Stage 4 DISABLED - PathRemapper already set strict relative paths
+                // Stage 4 was converting our ./js/gsap.min.js back to http://localhost:3000/js/gsap.min.js
+                // which then got mangled by legacy patchContent. We don't need it anymore.
+                // ripper.normalizePathsToAbsolute(clone); // DISABLED
+
+                // Stage 5: HTML Beautifier - Generate clean, formatted HTML
+                console.log('[DEVTOOL] Stage 5: HTML Beautifier - Formatting output...');
+                const beautifier = new HTMLBeautifier();
+                let finalHTML = beautifier.beautify(clone);
+
+                // Ensure DOCTYPE is present
+                if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
+                  finalHTML = '<!DOCTYPE html>\n' + finalHTML;
                 }
-              );
-            });
 
-            if (capturedDOM) {
-              // ──────────────────────────────────────────────
-              // DOM UNBUILDER PIPELINE: Asset Ripper + Structural Unwrapping + HTML Beautifier
-              // ──────────────────────────────────────────────
-              dispatch(uiActions.setStatus('Running DOM Unbuilder Pipeline...'));
-              
-              // Parse the captured DOM string back into a document
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(capturedDOM, 'text/html');
-              const clone = doc.documentElement;
+                // FIX 4: CLEAN UP ANY REMAINING :3000 GHOSTS
+                // Just to be absolutely safe, run one final regex on the entire HTML string BEFORE beautification
+                finalHTML = finalHTML.replace(/:[0-9]{4}\/assets/g, './assets');
+                finalHTML = finalHTML.replace(/:[0-9]{4}\/js/g, './js');
+                console.log('[DEVTOOL] Stage 5: Cleaned up port number ghosts from final HTML');
 
-              // Stage 0: PathRemapper - Download remote assets
-              console.log('[DEVTOOL] Stage 0: PathRemapper - Downloading remote assets...');
-              const pathRemapper = new PathRemapper();
-              await pathRemapper.run(clone, mainResource);
-              console.log('[DEVTOOL] PathRemapper Complete:', mainResource._downloadedAssets?.length || 0, 'assets downloaded');
+                console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
+                if (isV3Mode) {
+                  console.log('[DEVTOOL] V3.0 Mode: Phantom Engine injected with Ghost Lock (CSP) - Framework paralyzed, GSAP whitelisted');
+                }
 
-              // Stage 1: Asset Ripper - Extract SVGs and Base64 images
-              console.log('[DEVTOOL] Stage 1: Asset Ripper - Extracting inline assets...');
-              const ripper = new AssetRipper();
-              const assetManifest = ripper.run(clone);
-              console.log('[DEVTOOL] Asset Ripper Complete:', assetManifest.stats);
+                // NUCLEAR CLEANUP: Remove ALL localhost and port references before storing in ZIP
+                finalHTML = finalHTML.split(':3000/').join('./');
+                finalHTML = finalHTML.split('http://localhost:3000/').join('./');
+                finalHTML = finalHTML.split('http://localhost/').join('./');
+                console.log('[DEVTOOL] Nuclear cleanup: Removed all localhost and port references');
 
-              // Stage 3: Structural Unwrapping - Melt meaningless div-ception
-              console.log('[DEVTOOL] Stage 3: Structural Unwrapping - Melting div-ception...');
-              const unwrappedCount = ripper.unwrapMeaninglessDivs(clone);
-              console.log(`[DEVTOOL] Structural Unwrapping Complete: ${unwrappedCount} wrappers removed`);
+                // Store the asset manifest for ZIP creation
+                mainResource.content = finalHTML;
+                mainResource._assetManifest = assetManifest;
+                // NUCLEAR OVERRIDE: Skip legacy patchContent for main HTML - we've already fixed all paths in DOM
+                mainResource._skipPatchContent = true;
 
-              // NUCLEAR OVERRIDE: Stage 4 DISABLED - PathRemapper already set strict relative paths
-              // Stage 4 was converting our ./js/gsap.min.js back to http://localhost:3000/js/gsap.min.js
-              // which then got mangled by legacy patchContent. We don't need it anymore.
-              // ripper.normalizePathsToAbsolute(clone); // DISABLED
-
-              // Stage 5: HTML Beautifier - Generate clean, formatted HTML
-              console.log('[DEVTOOL] Stage 5: HTML Beautifier - Formatting output...');
-              const beautifier = new HTMLBeautifier();
-              let finalHTML = beautifier.beautify(clone);
-
-              // Ensure DOCTYPE is present
-              if (!finalHTML.trim().toLowerCase().startsWith('<!doctype')) {
-                finalHTML = '<!DOCTYPE html>\n' + finalHTML;
+                // Stage 6: GSAP Bundler - Fetch GSAP libraries for offline use
+                console.log('[DEVTOOL] Stage 6: GSAP Bundler - Fetching GSAP libraries...');
+                const gsapBundler = new GSAPBundler();
+                await gsapBundler.bundle(mainResource);
+                console.log('[DEVTOOL] GSAP Bundler Complete');
               }
-              
-              // FIX 4: CLEAN UP ANY REMAINING :3000 GHOSTS
-              // Just to be absolutely safe, run one final regex on the entire HTML string BEFORE beautification
-              finalHTML = finalHTML.replace(/:[0-9]{4}\/assets/g, './assets');
-              finalHTML = finalHTML.replace(/:[0-9]{4}\/js/g, './js');
-              console.log('[DEVTOOL] Stage 5: Cleaned up port number ghosts from final HTML');
-
-              console.log('[DEVTOOL] Overwriting main page content with Live DOM Snapshot');
-              if (isV3Mode) {
-                console.log('[DEVTOOL] V3.0 Mode: Phantom Engine injected with Ghost Lock (CSP) - Framework paralyzed, GSAP whitelisted');
-              }
-              
-              // NUCLEAR CLEANUP: Remove ALL localhost and port references before storing in ZIP
-              finalHTML = finalHTML.split(':3000/').join('./');
-              finalHTML = finalHTML.split('http://localhost:3000/').join('./');
-              finalHTML = finalHTML.split('http://localhost/').join('./');
-              console.log('[DEVTOOL] Nuclear cleanup: Removed all localhost and port references');
-              
-              // Store the asset manifest for ZIP creation
-              mainResource.content = finalHTML;
-              mainResource._assetManifest = assetManifest;
-              // NUCLEAR OVERRIDE: Skip legacy patchContent for main HTML - we've already fixed all paths in DOM
-              mainResource._skipPatchContent = true;
-
-              // Stage 6: GSAP Bundler - Fetch GSAP libraries for offline use
-              console.log('[DEVTOOL] Stage 6: GSAP Bundler - Fetching GSAP libraries...');
-              const gsapBundler = new GSAPBundler();
-              await gsapBundler.bundle(mainResource);
-              console.log('[DEVTOOL] GSAP Bundler Complete');
+            } catch (err) {
+              console.log('[DEVTOOL] Error during DOM snapshot:', err);
             }
-          } catch (err) {
-            console.log('[DEVTOOL] Error during DOM snapshot:', err);
           }
-        }
-        // ──────────────────────────────────────────────
+          // ──────────────────────────────────────────────
 
-        console.log(toDownload.filter(t => typeof t?.content !== 'string' && !!t?.content?.then));
-        if (loaded && toDownload.length) {
-          downloadZipFile(
-            toDownload,
-            { ignoreNoContentFile, beautifyFile },
-            (item, isDone) => {
-              dispatch(uiActions.setStatus(`Compressed: ${item.url} Processed: ${isDone}`));
-            },
-            () => {
-              logResourceByUrl(dispatch, downloadItem.url, toDownload);
-              if (i + 1 !== downloadList.length) {
-                dispatch(resetNetworkResource());
-                dispatch(resetStaticResource());
+          console.log(toDownload.filter(t => typeof t?.content !== 'string' && !!t?.content?.then));
+          if (loaded && toDownload.length) {
+            downloadZipFile(
+              toDownload,
+              { ignoreNoContentFile, beautifyFile },
+              (item, isDone) => {
+                dispatch(uiActions.setStatus(`Compressed: ${item.url} Processed: ${isDone}`));
+              },
+              () => {
+                logResourceByUrl(dispatch, downloadItem.url, toDownload);
+                if (i + 1 !== downloadList.length) {
+                  dispatch(resetNetworkResource());
+                  dispatch(resetStaticResource());
+                }
+                resolve();
               }
-              resolve();
-            }
-          );
-        }
-      });
-    }
-    dispatch(uiActions.setStatus(UI_INITIAL_STATE.status));
-    dispatch(uiActions.setIsSaving(false));
+            );
+          }
+        });
+      }
+      dispatch(uiActions.setStatus(UI_INITIAL_STATE.status));
+      dispatch(uiActions.setIsSaving(false));
     } finally {
       // ──────────────────────────────────────────────
       // KEEP-ALIVE: Stop keep-alive after operation completes

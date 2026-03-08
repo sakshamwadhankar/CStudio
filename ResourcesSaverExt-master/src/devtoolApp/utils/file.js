@@ -47,7 +47,7 @@ export const patchContent = (content, currentFilePath, resourceMap) => {
   // DISABLED: Nuclear override - PathRemapper already fixed all paths in DOM
   // This function was causing path mangling issues by converting ./js/gsap.min.js back to relative paths
   return content;
-  
+
   /* ORIGINAL IMPLEMENTATION DISABLED
   if (!content || typeof content !== 'string') return content;
 
@@ -147,12 +147,12 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
 
   const blobWrite = new zip.BlobWriter('application/zip');
   const zipWriter = new zip.ZipWriter(blobWrite);
-  
+
   // ── EXTRACT CSTUDIO ASSET MANIFEST (Native JSZip Base64 Handling) ──
   const assetPromises = [];
   if (mainResource && mainResource._assetManifest) {
     const manifest = mainResource._assetManifest;
-    
+
     // Add SVGs directly
     if (manifest.svgs && manifest.svgs.length > 0) {
       manifest.svgs.forEach(svg => {
@@ -162,7 +162,7 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
       });
       console.log(`[DEVTOOL] Added ${manifest.svgs.length} SVGs to ZIP`);
     }
-    
+
     // Add images with native base64 handling
     if (manifest.images && manifest.images.length > 0) {
       manifest.images.forEach(img => {
@@ -178,7 +178,7 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
       });
       console.log(`[DEVTOOL] Added ${manifest.images.length} images to ZIP`);
     }
-    
+
     // Clean up manifest
     delete mainResource._assetManifest;
   }
@@ -191,9 +191,18 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
       );
     });
     console.log(`[DEVTOOL] Added ${mainResource._gsapFiles.length} GSAP files to ZIP`);
-    
+
     // Clean up
     delete mainResource._gsapFiles;
+  }
+
+  // ── ADD CSTUDIO INTERACTIONS SCRIPT TO ZIP ──
+  if (mainResource && mainResource._interactionsFile) {
+    assetPromises.push(
+      zipWriter.add(mainResource._interactionsFile.filename, new zip.TextReader(mainResource._interactionsFile.content))
+    );
+    console.log('[DEVTOOL] Added CStudio interactions script to ZIP');
+    delete mainResource._interactionsFile;
   }
 
   // ── ADD DOWNLOADED ASSETS TO ZIP ──
@@ -210,7 +219,7 @@ export const downloadZipFile = (toDownload, options, eachDoneCallback, callback)
       }
     });
     console.log(`[DEVTOOL] Added ${mainResource._downloadedAssets.length} remote assets to ZIP`);
-    
+
     // Clean up
     delete mainResource._downloadedAssets;
   }
