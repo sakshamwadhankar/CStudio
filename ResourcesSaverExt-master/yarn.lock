@@ -1750,6 +1750,13 @@
     "@parcel/workers" "2.7.0"
     nullthrows "^1.1.1"
 
+"@parcel/transformer-inline-string@^2.7.0":
+  version "2.7.0"
+  resolved "https://registry.npmjs.org/@parcel/transformer-inline-string/-/transformer-inline-string-2.7.0.tgz"
+  integrity sha512-/WurxNIk85rOMq9YhPUAA2MqkXjgUGmU4BGdpwUeJKSB2xbA9Zu5Q355lCGzIxH50MJpDZ1Nm4As2Ss6BXVURA==
+  dependencies:
+    "@parcel/plugin" "2.7.0"
+
 "@parcel/transformer-js@2.7.0":
   version "2.7.0"
   resolved "https://registry.npmjs.org/@parcel/transformer-js/-/transformer-js-2.7.0.tgz"

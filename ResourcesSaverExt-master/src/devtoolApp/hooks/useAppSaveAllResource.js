@@ -1199,7 +1199,23 @@ export const useAppSaveAllResource = () => {
                 finalHTML = finalHTML.split(':3000/').join('./');
                 finalHTML = finalHTML.split('http://localhost:3000/').join('./');
                 finalHTML = finalHTML.split('http://localhost/').join('./');
+                // Catch ANY port number on localhost
+                finalHTML = finalHTML.replace(/https?:\/\/localhost(:\d+)?\//g, './');
+                // Catch bare port references like :5173/ or :8080/
+                finalHTML = finalHTML.replace(/:\d{2,5}\/(js|assets)\//g, './$1/');
                 console.log('[DEVTOOL] Nuclear cleanup: Removed all localhost and port references');
+
+                // FIX 5: Fix bare filenames missing their folder path prefix
+                // SVGs that lost their ./assets/svg/ prefix
+                finalHTML = finalHTML.replace(/src="(svg_\d+\.svg)"/g, 'src="./assets/svg/$1"');
+                // Remote assets that lost their ./assets/remote/ prefix  
+                finalHTML = finalHTML.replace(/src="(asset_\d+\.\w+)"/g, 'src="./assets/remote/$1"');
+                finalHTML = finalHTML.replace(/href="(asset_\d+\.css)"/g, 'href="./assets/remote/$1"');
+                finalHTML = finalHTML.replace(/poster="(asset_\d+\.\w+)"/g, 'poster="./assets/remote/$1"');
+                // Also catch url() references in inline styles
+                finalHTML = finalHTML.replace(/url\(["']?(asset_\d+\.\w+)["']?\)/g, 'url("./assets/remote/$1")');
+                finalHTML = finalHTML.replace(/url\(["']?(svg_\d+\.svg)["']?\)/g, 'url("./assets/svg/$1")');
+                console.log('[DEVTOOL] Nuclear cleanup: Fixed bare filenames with missing folder paths');
 
                 // Store the asset manifest for ZIP creation
                 mainResource.content = finalHTML;
